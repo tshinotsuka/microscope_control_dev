@@ -1,0 +1,113 @@
+# vDAQ I/O map — microscope_control_dev
+# 取得側プロジェクトの I/O 基盤ドキュメント。
+# FastZ / injector / behavior / resonant が増えるたびにここを更新する。
+
+project_id: microscope_control_dev
+updated: 2026-06-01
+
+system:
+  acquisition_software: ScanImage Premium 2026.0.0
+  scanimage_build: 67620ca4cc
+  matlab: R2025b
+  os: Windows 11
+  daq: vDAQ
+  scan_system: galvo-galvo
+
+vdaq:
+  device_name: vDAQ0
+  fpga: Kintex UltraScale
+  bus: PCIe
+  fast_input:
+    channels: 4
+    sample_rate_hz: 125000000        # 125 MS/s, 同時サンプリング
+    note: "PCIe 背面 4ch、画像化する信号は必ずここへ"
+  slow_input:
+    channels: 12
+    max_sample_rate_hz: 500000       # 500 kHz, breakout box
+    note: "補助モニタ / behavior 信号など低速用"
+
+analog_outputs:
+  AO0:
+    device: Imaging X Galvo
+    signal: galvo_x_command
+    note: "0.665 V/deg, range 15 deg"
+  AO1:
+    device: Imaging Y Galvo
+    signal: galvo_y_command
+    note: "0.665 V/deg, range 15 deg"
+  AO2:
+    device: null
+    signal: reserved_fastz_or_future
+    note: "reserved (FastZ PPC001 候補)"
+  AO3:
+    device: null
+    signal: reserved
+    note: "reserved"
+
+fast_inputs:
+  AI0:
+    device: PMT2100
+    channel_name: Ch0
+    signal: fluorescence_or_srs_pmt
+    role: imaging
+  AI1:
+    device: PMT2100
+    channel_name: Ch1
+    signal: fluorescence_or_srs_pmt
+    role: imaging
+  AI2:
+    device: custom_photodiode
+    channel_name: Ch2
+    signal: custom_PD
+    role: imaging
+    status: resolved
+    note: "斜め波状アーティファクトは再確認の結果、再現せず・信号は許容範囲。ハード変更なし。詳細は docs/troubleshooting.md 参照"
+  AI3:
+    device: PMT2100
+    channel_name: Ch3
+    signal: fluorescence_or_srs_pmt
+    role: imaging
+
+digital_outputs:
+  D3.1:
+    device: KSC101_shutter
+    signal: shutter_control
+    path: Excitation
+    open_time_s: 0.5
+
+stages:
+  z_stage:
+    device: MCM3000
+    connection: COM
+    status: "COM port to be confirmed on new PC"
+
+scanimage_files:
+  mdf: "C:/Users/KeioPharmMicroscopy2/Documents/MATLAB/MicroscopeMDF.m"
+  class_data: "C:/Users/KeioPharmMicroscopy2/Documents/MATLAB/MicroscopeMDF.ConfigData/2026/"
+
+calibration:
+  objectiveResolution_um_per_deg: 15   # 表示スケール用較正値
+  galvo_feedback:
+    x: calibrated
+    y: calibrated
+  waveform_test:
+    status: passed
+    note: "X: flyback 軽オーバーシュート + sweep 後半 軽 lag / Y: hold 中 ±15mV ジッタ"
+  waveform_optimize:
+    status: failed_vendor_issue
+    error:
+      - "feedbackPoints not recognized"
+      - "Tracking error unexpectedly increased"
+      - "Generated AO is empty"
+    handling: "skip for now; document in troubleshooting and report to MBF (case 25850)"
+
+reserved_for_future:
+  fastz:
+    device: PFM450E_PPC001
+    status: planned
+  injector_sync:
+    status: planned
+  behavior_logging:
+    status: planned
+  resonant_scanner:
+    status: planned

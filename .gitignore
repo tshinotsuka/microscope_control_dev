@@ -1,0 +1,41 @@
+# ============================================================
+# microscope_control_dev — data-less repository
+# 追跡するのは設定・手順・コード・文書のみ。生データは持たない。
+# ============================================================
+
+# --- raw acquisition data (NAS で保管、repo には入れない) ---
+*.tif
+*.tiff
+*.pmt.dat
+*.scnnr.dat
+*.meta.txt
+*.dat
+# ※ examples/ に参照用サンプルを 1 個だけ置きたい場合は
+#    git add -f examples/<file> で明示的に追加する
+
+# --- 追跡する設定成果物（下記は ignore しない / 参考メモ）---
+#   *.cfg        ScanImage 設定
+#   *.roigrp     ALS scan path
+#   MicroscopeMDF.m など MDF の .m
+
+# --- ScanImage / MATLAB のマシンローカル状態 ---
+*.ConfigData/
+ConfigData/
+classData*
+*.asv
+*.mex*
+slprj/
+
+# --- Python ---
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
