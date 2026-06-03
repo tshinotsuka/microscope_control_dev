@@ -6,8 +6,10 @@
 
 依拠する規則:
 
-- `in_vivo_water_imaging_brain/docs/file_naming.md`(解析側 project)
-- `handoff_hardware_control_dev.md`(取得側 project セットアップ文書)
+- `in_vivo_water_imaging_brain/docs/file_naming.md`(解析側 project・命名規則の原典。2026-06-02 に v3 凍結)
+- `in_vivo_water_imaging_brain/docs/metadata_schema.md`(解析側 project・metadata 契約)
+- `docs/status.md`(取得側 living 文書・現在状態の正)
+- `docs/overview.md`(取得側システム構成)
 
 ---
 
@@ -64,7 +66,7 @@ D:\experiment_data\2025_brain_water_dynamics\2photon\20260YYMM_sub-sk8_ses-01\ra
 | Save Path | 上記の `raw/` 直下 | NAS 直書き禁止 |
 | File Stem (`logFileStem`) | `sub-<mouseID>_ses-<XX>_cond-<condition>_run-<XX>` | `fov-` は必要時に挿入 |
 | Acquisition Counter | ScanImage 自動付与 | 人間は触らない |
-| Scanner Feedback (`.scnnr.dat`) | **ON** | ALS 撮影時は必須(handoff §3.4) |
+| Scanner Feedback (`.scnnr.dat`) | **ON** | ALS 撮影時は必須(file_naming.md「ALS の出力命名」) |
 | Channel Logging | ON | 必要 channel 数 active |
 
 ### File Stem の構成例
@@ -72,9 +74,15 @@ D:\experiment_data\2025_brain_water_dynamics\2photon\20260YYMM_sub-sk8_ses-01\ra
 | 状況 | logFileStem の値 |
 |---|---|
 | in vivo、baseline 条件、1 回目 | `sub-sk8_ses-01_cond-baseline_run-01` |
-| 100% D2O 投与後 | `sub-sk8_ses-01_cond-100d2o_run-01` |
+| D2O 静脈内投与後 | `sub-sk8_ses-01_cond-d2oiv_run-01` |
 | FOV を切り替えた | `sub-sk8_ses-01_fov-02_cond-baseline_run-01` |
-| EGFP slice での ALS テスト | `sub-ref_ses-01_cond-egfp-slice_run-01` |
+| 固定 EGFP slice での ALS テスト | `sub-ref_ses-01_cond-qc_run-01` |
+
+> **cond は v3 文法に従う**（file_naming.md と同期）:
+> - **数値は cond に入れない**。`100d2o` は廃止 → `d2oiv`（濃度は metadata `sample.injections[].concentration_pct`）。
+> - **試料属性は cond に入れない**。`egfp`/`slice`/`fixed` は cond に密輸せず、`cond-qc`（または `cond-test`）の 1 語にして
+>   属性は metadata（`sample.preparation: slice` / `channels[].marker: GFP` / `subject.genotype`）へ。
+>   旧 `cond-egfp-slice` のような token は不可。
 
 撮影実行後、ScanImage は連番(`_00001`, `_00002`, ...)を自動で付けて出力する。
 
@@ -86,14 +94,19 @@ ScanImage 側で `logFileStem` を更新するタイミング:
 
 ### 3.1 `run-` の +1
 
-- 新しい acquisition を始めるとき(同 condition の反復・別 trial など)
-- scan mode を切り替えるとき(raster ↔ ALS)
-- 同 FOV の raster と ALS をペアで撮るとき(ペアごとに run- を進める)
+`run-` は **独立した別 take** のときだけ +1 する（人間が割り当てる取得番号）。
+
+- 同 condition で独立した取得を繰り返すとき（別 trial など）。今後使う可能性があれば最初から `run-01`。
+- **scan mode 切替（raster ↔ ALS）や scan speed 変更では +1 しない**。ScanImage は grab ごとに連番 `_NNNNN` を増やすので、
+  同一 `run-` の中に raster grab と複数の ALS grab が同居してよい（file_naming.md v3）。
+- acquisition の識別キーは **(fov, cond, run, idx)** で **1 idx(=`_NNNNN`)= 1 acquisition**。
+  raster/ALS・scan speed・cycle 数の違いは `run-` でなく metadata で表す。
+- baseline → 処置で条件が変わるときは `cond-` が状態を担い、**`run-` は cond ごとに 01 にリセット**（§3.2）。
 
 ### 3.2 `cond-` の変更
 
-- 実験条件が変わったとき(`baseline` → `100d2o` など)
-- **内容ベース**で命名(`control` のような曖昧語は使わない)
+- 実験条件が変わったとき(`baseline` → `d2oiv` など)。**cond が変わったら `run-` は 01 にリセット**する。
+- **内容ベース**で命名(`control` / `100d2o` のような廃止語・曖昧語は使わない。濃度などの数値は metadata)。
 
 ### 3.3 `fov-` の挿入
 
@@ -107,7 +120,7 @@ ScanImage 側で `logFileStem` を更新するタイミング:
 
 ### 3.5 入れない要素(重要)
 
-以下は **ファイル名に入れない**。metadata で扱う(handoff §3.2, §3.3):
+以下は **ファイル名に入れない**。metadata で扱う(file_naming.md「acquisition_type / scanner_type はファイル名に入れない」/ metadata_schema.md):
 
 - acquisition_type(`frame` / `zstack` / `volume` / `als`)
 - scanner_type(`galvo` / `resonant`)
@@ -123,7 +136,7 @@ ScanImage 側で `logFileStem` を更新するタイミング:
 ### 4.1 ファイル名の目視確認
 
 `raw/` 配下のファイルが規則どおりか確認。**間違っていてもリネームしない**
-(取得時に正しく付けるのが大原則、handoff §6 原則 5)。
+(取得時に正しく付けるのが大原則、file_naming.md「設計方針」：取得時に正しく付ける > 取得後にリネーム)。
 
 リネームせず、可能なら metadata 側の補足で対応する。誤命名が大きな問題なら、
 撮影をやり直す判断を検討。
@@ -201,8 +214,14 @@ NAS が一次保管。ローカルは作業終了後に削除可能。
 - metadata スキーマ: `in_vivo_water_imaging_brain/docs/metadata_schema.md`
 - 自動取得スクリプト: `in_vivo_water_imaging_brain/scripts/generate_metadata.py`
 - NAS 構造: `in_vivo_water_imaging_brain/docs/nas_structure.md`
-- 取得側 handoff: `handoff_hardware_control_dev.md`
+- 取得側の現在状態(living): `docs/status.md`
+- 取得側システム構成: `docs/overview.md`
 
 ---
 
 初版 2026-05-29、`microscope_control_dev` project セットアップ時。
+
+改訂 2026-06-04: 解析側 `file_naming.md` v3（2026-06-02 凍結）と同期。`cond-100d2o` → `d2oiv`（濃度は metadata）、
+`cond-egfp-slice` → `cond-qc`（属性は metadata）、`run-` の +1 規則を「独立 take のみ・raster↔ALS では増やさない・
+識別キー (fov,cond,run,idx)」に訂正、cond 変更時の `run-` リセットを明記、廃止された `handoff_hardware_control_dev.md`
+参照を `status.md` / `overview.md` / `metadata_schema.md` に張り替え。

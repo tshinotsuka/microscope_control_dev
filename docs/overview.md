@@ -2,7 +2,7 @@
 
 取得側プロジェクトの現状と Phase 構造をまとめた参照文書。
 
-最終更新: 2026-06-02（Stage 1 ドラフト）
+最終更新: 2026-06-04（status.md と同期。Phase 2 = behavior 方式A 決定を反映、関連文書に status.md / roadmap 追加）
 
 ---
 
@@ -50,10 +50,12 @@ SRS 脳内水動態イメージング研究の取得側。
   （`docs/troubleshooting.md` 参照、MBF case 25850）。実位置は `.scnnr.dat` に記録される。
 - Phase 1 の残タスクは実質「repo 立ち上げ」のみ。
 
-### Phase 2 以降（TBD）
+### Phase 2 以降（進行中）
 
 - SRS 取得（自作 PD Ch2 系）、ALS マルチライン、FastZ / injector / behavior 同期、resonant 等を含む。
-- 各 Phase の定義・Done criteria は別チャネル計画書から順次転記する。
+- behavior 入力経路は **方式A（vDAQ Data Recorder + Auxiliary Trigger）に決定済み**（方式B = `BehaviorAcquisition.m` + 別 NI は fallback）。
+- 現在の状態・次手・gate・実機セッションの段取りは `docs/status.md`（取得側 living 文書）が正。
+- 各 Phase の Done criteria は roadmap / `status.md` に集約していく。
 
 ## 4. 既知の問題
 
@@ -64,7 +66,9 @@ SRS 脳内水動態イメージング研究の取得側。
 
 ## 5. 関連文書
 
+- `docs/status.md` — 取得側の現在状態・次手の living 文書（現在状態の正）
 - `sops/scanimage_logfilestem_sop.md` — 命名規則に沿った取得手順
 - `config/wiring/vdaq_io_map.yaml` — I/O 割当
 - `docs/troubleshooting.md` — 問題と対処
+- 優先順位の正（解析側）: `in_vivo_water_imaging_brain/docs/strategy_roadmap.md`
 - 解析側: `in_vivo_water_imaging_brain/docs/{file_naming,metadata_schema,nas_structure}.md`
