@@ -33,6 +33,7 @@ sops/      操作手順書（撮影時に見るチェックリスト）
 config/    MDF / ScanImage CFG / 配線マップ
 src/       コード（ScanImage / DAQ / MATLAB / Arduino）
 examples/  サンプル・参照データ片
+schemas/   JSON Schema（sidecar 等）
 templates/ 雛形
 ```
 
