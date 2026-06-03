@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/schemas/als_sidecar.schema.json",
+  "title": "ALS line-scan acquisition sidecar",
+  "description": "Per-acquisition metadata for a ScanImage Arbitrary Line Scanning GRAB. Holds scan_mode/acq and acquisition geometry that are intentionally NOT encoded in the filename.",
+  "type": "object",
+  "required": ["identification", "acq", "timing", "channels", "feedback", "files"],
+  "additionalProperties": false,
+  "properties": {
+    "identification": {
+      "type": "object",
+      "required": ["entities", "counter"],
+      "additionalProperties": false,
+      "properties": {
+        "date": { "type": ["string", "null"], "pattern": "^[0-9]{8}$", "description": "YYYYMMDD prefix from the filename, if present" },
+        "entities": {
+          "type": "object",
+          "description": "BIDS-style key-value entities parsed from the filename",
+          "properties": {
+            "sub": { "type": "string" },
+            "ses": { "type": "string" },
+            "cond": { "type": "string" },
+            "run": { "type": "string" }
+          },
+          "required": ["sub", "ses", "run"],
+          "additionalProperties": { "type": "string" }
+        },
+        "counter": { "type": "string", "pattern": "^[0-9]+$", "description": "ScanImage file counter (e.g. 00001)" }
+      }
+    },
+    "acq": {
+      "type": "object",
+      "required": ["scan_mode", "acq", "scanner_type", "scanimage_version"],
+      "additionalProperties": false,
+      "properties": {
+        "scan_mode": { "type": "string", "description": "SI.hScan2D.scanMode, e.g. 'linear'" },
+        "acq": { "type": "string", "enum": ["als-line", "als-multiline", "raster"], "description": "logical acquisition type (the 'acq-*' kept out of the filename)" },
+        "scanner_type": { "type": "string", "description": "e.g. 'GG' (galvo-galvo)" },
+        "premium": { "type": ["boolean", "null"] },
+        "scanimage_version": { "type": "string" },
+        "version_commit": { "type": ["string", "null"] }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "required": ["pmt_sample_rate_hz", "pmt_samples_per_cycle", "n_cycles"],
+      "additionalProperties": false,
+      "properties": {
+        "pmt_sample_rate_hz": { "type": "number" },
+        "pmt_samples_per_cycle": { "type": "integer" },
+        "fdbk_sample_rate_hz": { "type": ["number", "null"] },
+        "fdbk_samples_per_cycle": { "type": ["integer", "null"] },
+        "n_cycles": { "type": ["integer", "null"], "description": "derived from .pmt.dat size; null if file absent" },
+        "cycle_duration_s": { "type": "number" },
+        "cycle_rate_hz": { "type": "number" }
+      }
+    },
+    "channels": {
+      "type": "object",
+      "required": ["saved", "dtype"],
+      "additionalProperties": false,
+      "properties": {
+        "saved": { "type": "array", "items": { "type": "integer" } },
+        "dtype": { "type": "string", "description": "on-disk PMT dtype, e.g. 'int16'" },
+        "adc_resolution_bits": { "type": ["integer", "null"] },
+        "input_ranges_v": { "type": "array", "items": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 } },
+        "offsets": { "type": "array", "items": { "type": "number" } },
+        "subtract_offsets": { "type": "array", "items": { "type": "boolean" } }
+      }
+    },
+    "feedback": {
+      "type": "object",
+      "required": ["recorded"],
+      "additionalProperties": false,
+      "properties": {
+        "recorded": { "type": "boolean" },
+        "n_channels": { "type": ["integer", "null"], "description": "2 = (X,Y); 3 = (X,Y,Z)" },
+        "dtype": { "type": ["string", "null"], "description": "e.g. 'single'" }
+      }
+    },
+    "path": {
+      "type": "object",
+      "description": "scan path / stimulus group geometry",
+      "additionalProperties": false,
+      "properties": {
+        "roi_group_name": { "type": ["string", "null"] },
+        "rois": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": ["string", "null"] },
+              "function": { "type": ["string", "null"], "description": "e.g. scanimage.mroi.stimulusfunctions.line" },
+              "center_xy": { "type": "array", "items": { "type": "number" } },
+              "size_xy": { "type": "array", "items": { "type": "number" } },
+              "rotation_deg": { "type": ["number", "null"] },
+              "zs": { "type": ["number", "null"] },
+              "duration_s": { "type": ["number", "null"] },
+              "repetitions": { "type": ["integer", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "files": {
+      "type": "object",
+      "required": ["stem"],
+      "additionalProperties": false,
+      "properties": {
+        "stem": { "type": "string" },
+        "meta": { "type": "string" },
+        "pmt": { "type": ["string", "null"] },
+        "scnnr": { "type": ["string", "null"] }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "machine_data_file": { "type": ["string", "null"] },
+        "acq_state": { "type": ["string", "null"] },
+        "generated_by": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

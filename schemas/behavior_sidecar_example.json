@@ -1,0 +1,72 @@
+{
+  "identification": {
+    "date": "20260610",
+    "entities": {
+      "sub": "01",
+      "ses": "01",
+      "cond": "d2oiv",
+      "run": "01"
+    },
+    "counter": "00001"
+  },
+  "acq": {
+    "acq": "behavior",
+    "description": "treadmill + IV injection, frame-clock TTL recorded"
+  },
+  "timing": {
+    "sample_rate_hz": 2000.0,
+    "n_samples": 1200000,
+    "duration_s": 600.0,
+    "start_time": "2026-06-10 14:32:07"
+  },
+  "clock": {
+    "device": "Dev1",
+    "device_is_vdaq": false,
+    "frame_alignment": "frame_clock_ttl",
+    "frame_clock_channel": "frame_clock",
+    "frame_log_role": "cross_check",
+    "note": "ScanImage frames are aligned via the recorded frame_clock TTL (same DAQ clock as behavior). frame_log/sample_index is a coarse, chunk-quantized cross-check only."
+  },
+  "channels": [
+    { "name": "velocity",     "physical_channel": "Dev1/ai0", "role": "velocity",     "kind": "signal", "input_range_v": [-10, 10] },
+    { "name": "lick",         "physical_channel": "Dev1/ai1", "role": "lick",         "kind": "signal", "input_range_v": [0, 5] },
+    { "name": "pupil_trig",   "physical_channel": "Dev1/ai2", "role": "pupil_trig",   "kind": "signal", "input_range_v": [0, 5] },
+    { "name": "reward_valve", "physical_channel": "Dev1/ai3", "role": "reward_valve", "kind": "signal", "input_range_v": [0, 5] },
+    { "name": "frame_clock",  "physical_channel": "Dev1/ai4", "role": "frame_clock",  "kind": "ttl",    "input_range_v": [0, 5] },
+    { "name": "visual_stim",  "physical_channel": "Dev1/ai5", "role": "visual_stim",  "kind": "signal", "input_range_v": [0, 5] },
+    { "name": "injector",     "physical_channel": "Dev1/ai6", "role": "injector",     "kind": "ttl",    "input_range_v": [0, 5] }
+  ],
+  "triggers": {
+    "sources": [
+      {
+        "name": "injection",
+        "channel": "injector",
+        "threshold_v": 2.5,
+        "direction": "rising",
+        "min_gap_samples": 50,
+        "encoding": "interval"
+      }
+    ],
+    "events": {
+      "injection": [
+        { "on_sample": 120000, "on_s": 60.0,  "off_sample": 130000, "off_s": 65.0,  "duration_s": 5.0 },
+        { "on_sample": 600000, "on_s": 300.0, "off_sample": 610000, "off_s": 305.0, "duration_s": 5.0 }
+      ]
+    }
+  },
+  "links": {
+    "scanimage_stems": [
+      "20260610_sub-01_ses-01_cond-d2oiv_run-01_00001"
+    ]
+  },
+  "files": {
+    "stem": "20260610_sub-01_ses-01_cond-d2oiv_run-01_00001",
+    "behavior_h5": "behavior.h5",
+    "config_json": "config.json",
+    "injection_csv": "injection.csv"
+  },
+  "provenance": {
+    "generated_by": "make_behavior_sidecar.py",
+    "session_name": "20260610_143207"
+  }
+}

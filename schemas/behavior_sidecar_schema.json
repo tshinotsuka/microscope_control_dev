@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/schemas/behavior_sidecar.schema.json",
+  "title": "Behavior acquisition sidecar (BehaviorAcquisition.m companion)",
+  "description": "Per-acquisition metadata for a behavior.h5 recorded alongside a ScanImage GRAB. Carries BIDS entities (shared stem with the microscopy GRAB), channel roles, the clock-domain reconciliation, and derived trigger/injection events (trigger_sync). Mirrors als_sidecar.schema.json.",
+  "type": "object",
+  "required": ["identification", "acq", "timing", "clock", "channels", "files"],
+  "additionalProperties": false,
+  "properties": {
+    "identification": {
+      "type": "object",
+      "required": ["entities", "counter"],
+      "additionalProperties": false,
+      "properties": {
+        "date": { "type": ["string", "null"], "pattern": "^[0-9]{8}$", "description": "YYYYMMDD prefix from the shared GRAB stem, if present" },
+        "entities": {
+          "type": "object",
+          "description": "BIDS-style key-value entities parsed from the shared ScanImage GRAB stem",
+          "properties": {
+            "sub": { "type": "string" },
+            "ses": { "type": "string" },
+            "cond": { "type": "string" },
+            "run": { "type": "string" }
+          },
+          "required": ["sub", "ses", "run"],
+          "additionalProperties": { "type": "string" }
+        },
+        "counter": { "type": "string", "pattern": "^[0-9]*$", "description": "ScanImage file counter shared with the GRAB (e.g. 00001)" }
+      }
+    },
+    "acq": {
+      "type": "object",
+      "required": ["acq"],
+      "additionalProperties": false,
+      "properties": {
+        "acq": { "type": "string", "enum": ["behavior"] },
+        "description": { "type": ["string", "null"], "description": "free annotation (task, drug, etc.)" }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "required": ["sample_rate_hz", "n_samples"],
+      "additionalProperties": false,
+      "properties": {
+        "sample_rate_hz": { "type": "number" },
+        "n_samples": { "type": ["integer", "null"] },
+        "duration_s": { "type": ["number", "null"] },
+        "start_time": { "type": ["string", "null"] }
+      }
+    },
+    "clock": {
+      "type": "object",
+      "description": "Clock-domain reconciliation. The behavior AI is on a SEPARATE NI board (NOT the vDAQ); ScanImage frame alignment is via the recorded frame_clock TTL (authoritative), with frame_log/sample_index kept only as a coarse cross-check.",
+      "required": ["device_is_vdaq", "frame_alignment"],
+      "additionalProperties": false,
+      "properties": {
+        "device": { "type": ["string", "null"], "description": "NI device name, e.g. 'Dev1'" },
+        "device_is_vdaq": { "type": "boolean", "description": "false: behavior AI is on a separate NI board, bridged to ScanImage by a TTL copy" },
+        "frame_alignment": { "type": "string", "enum": ["frame_clock_ttl", "frame_log_sample_index"], "description": "authoritative source for frame<->behavior alignment" },
+        "frame_clock_channel": { "type": ["string", "null"], "description": "channel name carrying the SI frame-clock TTL copy" },
+        "frame_log_role": { "type": "string", "enum": ["cross_check", "authoritative", "absent"] },
+        "note": { "type": ["string", "null"] }
+      }
+    },
+    "channels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "kind"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "physical_channel": { "type": ["string", "null"] },
+          "role": { "type": ["string", "null"], "description": "contract role (metadata_schema channels[].name); refine against the analysis-side contract" },
+          "kind": { "type": "string", "enum": ["signal", "ttl"] },
+          "input_range_v": { "type": ["array", "null"], "items": { "type": "number" }, "minItems": 2, "maxItems": 2 }
+        }
+      }
+    },
+    "triggers": {
+      "type": "object",
+      "description": "trigger_sync: events derived from TTL channels by threshold crossing. Reproducible from the raw channel via the recorded detection params (mirrors analysis_postprocess.detect_events).",
+      "additionalProperties": false,
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "channel", "threshold_v", "direction"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "description": "event-stream name, e.g. 'injection'" },
+              "channel": { "type": "string", "description": "behavior channel the events were detected on, e.g. 'injector'" },
+              "threshold_v": { "type": "number" },
+              "direction": { "type": "string", "enum": ["rising", "falling", "both"] },
+              "min_gap_samples": { "type": ["integer", "null"] },
+              "encoding": { "type": "string", "enum": ["interval", "pulse"], "description": "interval: on->off pair (e.g. injection on/off); pulse: instantaneous" }
+            }
+          }
+        },
+        "events": {
+          "type": "object",
+          "description": "derived event tables keyed by source name",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["on_sample"],
+              "additionalProperties": false,
+              "properties": {
+                "on_sample": { "type": "integer" },
+                "on_s": { "type": ["number", "null"] },
+                "off_sample": { "type": ["integer", "null"] },
+                "off_s": { "type": ["number", "null"] },
+                "duration_s": { "type": ["number", "null"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "links": {
+      "type": "object",
+      "description": "the microscopy acquisition(s) this behavior recording accompanies (shared stem)",
+      "additionalProperties": false,
+      "properties": {
+        "scanimage_stems": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "files": {
+      "type": "object",
+      "required": ["stem"],
+      "additionalProperties": false,
+      "properties": {
+        "stem": { "type": "string" },
+        "behavior_h5": { "type": ["string", "null"] },
+        "config_json": { "type": ["string", "null"] },
+        "injection_csv": { "type": ["string", "null"] }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "generated_by": { "type": ["string", "null"] },
+        "session_name": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "identification": {
+    "date": "20260529",
+    "entities": {
+      "sub": "ref",
+      "ses": "01",
+      "cond": "cagegfpfixed",
+      "run": "01"
+    },
+    "counter": "00001"
+  },
+  "acq": {
+    "scan_mode": "linear",
+    "acq": "als-line",
+    "scanner_type": "GG",
+    "premium": true,
+    "scanimage_version": "2026.0.0",
+    "version_commit": "67620ca4ccdc5e8b1997b0c5e88d61d3899cedae"
+  },
+  "timing": {
+    "pmt_sample_rate_hz": 2500000.0,
+    "pmt_samples_per_cycle": 5000,
+    "fdbk_sample_rate_hz": 200000.0,
+    "fdbk_samples_per_cycle": 400,
+    "n_cycles": 5000,
+    "cycle_duration_s": 0.002,
+    "cycle_rate_hz": 500.0
+  },
+  "channels": {
+    "saved": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "dtype": "int16",
+    "adc_resolution_bits": 16,
+    "input_ranges_v": [
+      [
+        -1,
+        1
+      ],
+      [
+        -1,
+        1
+      ],
+      [
+        -1,
+        1
+      ],
+      [
+        -1,
+        1
+      ]
+    ],
+    "offsets": [
+      -334,
+      764,
+      359,
+      1127
+    ],
+    "subtract_offsets": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "feedback": {
+    "recorded": true,
+    "n_channels": 2,
+    "dtype": "single"
+  },
+  "path": {
+    "roi_group_name": "Line Scanning ROI Group",
+    "rois": [
+      {
+        "name": "ROI 1",
+        "function": "scanimage.mroi.stimulusfunctions.line",
+        "center_xy": [
+          1,
+          -4.5
+        ],
+        "size_xy": [
+          2,
+          0
+        ],
+        "rotation_deg": 30,
+        "zs": 2.8,
+        "duration_s": 0.002,
+        "repetitions": 1
+      }
+    ]
+  },
+  "files": {
+    "stem": "20260529_sub-ref_ses-01_cond-cagegfpfixed_run-01_00001",
+    "meta": "20260529_sub-ref_ses-01_cond-cagegfpfixed_run-01_00001.meta.txt",
+    "pmt": "20260529_sub-ref_ses-01_cond-cagegfpfixed_run-01_00001.pmt.dat",
+    "scnnr": "20260529_sub-ref_ses-01_cond-cagegfpfixed_run-01_00001.scnnr.dat"
+  },
+  "provenance": {
+    "machine_data_file": null,
+    "acq_state": "grab",
+    "generated_by": "make_sidecar.py"
+  }
+}
