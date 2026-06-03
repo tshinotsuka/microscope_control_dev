@@ -20,7 +20,11 @@
 | 状況 | project_id |
 |---|---|
 | 本実験(in vivo imaging、D2O 取得など) | `2025_brain_water_dynamics` |
-| 開発・テスト・キャリブレーション(ALS テスト、ファントム等) | `microscope_control_dev` |
+| 開発・テスト・キャリブレーション(ALS テスト、ファントム等) | `2026_microscope_control_dev` |
+
+> project_id は `<YYYY>_<theme>` 形式（nas_structure.md）。dev/test も以降は `2026_microscope_control_dev` で統一する
+> （リポジトリ名 `microscope_control_dev` とは別物）。以前 `microscope_control_dev` で置いた dev データは
+> raw リネーム禁止の原則どおり**そのまま**にし、新規分から新 id を使う。
 
 ### 1.2 dataset_id を決める
 
@@ -44,7 +48,7 @@
 例(開発テスト):
 
 ```
-D:\experiment_data\microscope_control_dev\2photon\20260529_sub-ref_ses-01\raw\
+D:\experiment_data\2026_microscope_control_dev\2photon\20260529_sub-ref_ses-01\raw\
 ```
 
 例(本実験):
@@ -225,3 +229,6 @@ NAS が一次保管。ローカルは作業終了後に削除可能。
 `cond-egfp-slice` → `cond-qc`（属性は metadata）、`run-` の +1 規則を「独立 take のみ・raster↔ALS では増やさない・
 識別キー (fov,cond,run,idx)」に訂正、cond 変更時の `run-` リセットを明記、廃止された `handoff_hardware_control_dev.md`
 参照を `status.md` / `overview.md` / `metadata_schema.md` に張り替え。
+
+改訂 2026-06-04: dev/test の project_id を `microscope_control_dev` → `2026_microscope_control_dev` に変更（`<YYYY>_<theme>` 準拠）。
+以降の新規 dev/test データはこの id を使う。既存 dev データはリネームしない。
