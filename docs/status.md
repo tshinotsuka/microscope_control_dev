@@ -1,4 +1,4 @@
-# Handoff — 取得側（hardware / 制御）2026-06-03
+# Status — 取得側（hardware / 制御）2026-06-03
 
 ```
 last_updated:   2026-06-03
