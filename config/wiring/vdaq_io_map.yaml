@@ -1,113 +1,73 @@
 # vDAQ I/O map — microscope_control_dev
-# 取得側プロジェクトの I/O 基盤ドキュメント。
-# FastZ / injector / behavior / resonant が増えるたびにここを更新する。
-
-project_id: microscope_control_dev
-updated: 2026-06-01
-
-system:
-  acquisition_software: ScanImage Premium 2026.0.0
-  scanimage_build: 67620ca4cc
-  matlab: R2025b
-  os: Windows 11
-  daq: vDAQ
-  scan_system: galvo-galvo
+#
+# 方式A: behavior/aux は vDAQ 低速 AI を ScanImage "Data Recorder" で HDF5 記録し、
+#        injector TTL は "Auxiliary Trigger" で同時記録 TIFF に timestamp する
+#        （いずれも同一 vDAQ クロック。別 NI ボードは方式B fallback）。
+#
+# 注意: ここは **PLAN**。port 番号・信号名は breakout 実配線および ScanImage
+#       Resource Configuration（Data Recorder / Aux Trigger / Scanner 設定）と
+#       突合して確定すること。HSAI/AI/DIO の番号は仮。
 
 vdaq:
-  device_name: vDAQ0
-  fpga: Kintex UltraScale
-  bus: PCIe
-  fast_input:
-    channels: 4
-    sample_rate_hz: 125000000        # 125 MS/s, 同時サンプリング
-    note: "PCIe 背面 4ch、画像化する信号は必ずここへ"
-  slow_input:
-    channels: 12
-    max_sample_rate_hz: 500000       # 500 kHz, breakout box
-    note: "補助モニタ / behavior 信号など低速用"
+  model: "vDAQ (Kintex UltraScale, PCIe)"
+  breakout: "low-speed AI x12 / AO x12 / DIO 4 groups x 8"
+  clock: "single vDAQ master clock（imaging と aux/Data Recorder が同一クロック）"
 
-analog_outputs:
-  AO0:
-    device: Imaging X Galvo
-    signal: galvo_x_command
-    note: "0.665 V/deg, range 15 deg"
-  AO1:
-    device: Imaging Y Galvo
-    signal: galvo_y_command
-    note: "0.665 V/deg, range 15 deg"
-  AO2:
-    device: null
-    signal: reserved_fastz_or_future
-    note: "reserved (FastZ PPC001 候補)"
-  AO3:
-    device: null
-    signal: reserved
-    note: "reserved"
+# ---- imaging（高速 AI・PCIe bracket SMB, 4ch 125 MS/s）----
+high_speed_ai:
+  - {port: "HSAI0", signal: "PMT2100_ch0", role: "imaging_pmt"}
+  - {port: "HSAI1", signal: "PMT2100_ch1", role: "imaging_pmt"}
+  - {port: "HSAI2", signal: "custom_PD",   role: "imaging_pd", note: "自作PD（SRS系）"}
+  - {port: "HSAI3", signal: "PMT2100_ch3", role: "imaging_pmt"}
 
-fast_inputs:
-  AI0:
-    device: PMT2100
-    channel_name: Ch0
-    signal: fluorescence_or_srs_pmt
-    role: imaging
-  AI1:
-    device: PMT2100
-    channel_name: Ch1
-    signal: fluorescence_or_srs_pmt
-    role: imaging
-  AI2:
-    device: custom_photodiode
-    channel_name: Ch2
-    signal: custom_PD
-    role: imaging
-    status: resolved
-    note: "斜め波状アーティファクトは再確認の結果、再現せず・信号は許容範囲。ハード変更なし。詳細は docs/troubleshooting.md 参照"
-  AI3:
-    device: PMT2100
-    channel_name: Ch3
-    signal: fluorescence_or_srs_pmt
-    role: imaging
+# ---- behavior / aux（低速 AI → Data Recorder で HDF5 記録）----
+# ScanImage: Resource Config に Data Recorder を追加 → 下の信号を登録。
+# signal name がそのまま HDF5 dataset 名になる（/ は不可）。
+low_speed_ai:
+  recorder: "ScanImage Data Recorder"
+  sample_rate_hz: 2000            # 1–5 kHz 想定。Data Recorder 範囲 500 Hz–500 kHz 内
+  signals:
+    - {port: "AI0", name: "velocity",     range_v: [-10, 10], role: "behavior"}
+    - {port: "AI1", name: "lick",         range_v: [0, 5],    role: "behavior"}
+    - {port: "AI2", name: "reward_valve", range_v: [0, 5],    role: "behavior"}
+    - {port: "AI3", name: "visual_stim",  range_v: [0, 5],    role: "behavior"}
+    - {port: "AI4", name: "pupil_trig",   range_v: [0, 5],    role: "behavior"}
+    # 追加 behavior 信号はここに（最大 12ch）
 
-digital_outputs:
-  D3.1:
-    device: KSC101_shutter
-    signal: shutter_control
-    path: Excitation
-    open_time_s: 0.5
+# ---- digital（injector など TTL イベント → Auxiliary Trigger）----
+digital:
+  - line: "DI group0/line0"
+    name: "injector"
+    role: "aux_trigger"
+    edge: "both"                  # 注入 on（rising）/ off（falling）
+    note: "Aux Trigger に接続して TIFF に timestamp。1 注入＝on/off の 2 edge（登録上限・推奨 ~10/frame 内）"
+  # 他イベント TTL（例: reward pulse）も Aux Trigger に追加可
 
-stages:
-  z_stage:
-    device: MCM3000
-    connection: COM
-    status: "COM port to be confirmed on new PC"
+# ---- frame ↔ behavior 同期（同一クロック前提の対応づけ）----
+frame_sync:
+  injection: "Aux Trigger timestamp（TIFF/metadata に frame 揃いで直接記録）"
+  continuous: "TODO — 次のどちらかを実機で確定:"
+  options:
+    - "(a) Data Recorder を imaging 開始 trigger で start（Use Trigger）"
+    - "(b) frame clock/marker を Data Recorder の 1ch（AI or DI）として記録し後処理で対応"
+  note: "同一 vDAQ クロックなので start を揃えれば対応は自明。どちらを正にするか実機で決める。"
 
-scanimage_files:
-  mdf: "C:/Users/KeioPharmMicroscopy2/Documents/MATLAB/MicroscopeMDF.m"
-  class_data: "C:/Users/KeioPharmMicroscopy2/Documents/MATLAB/MicroscopeMDF.ConfigData/2026/"
+# ---- analog out（scan/制御）----
+analog_out:
+  - {port: "AO0", signal: "galvo_X", role: "scan"}
+  - {port: "AO1", signal: "galvo_Y", role: "scan"}
+  # FastZ AO は将来（Tier 2）
 
-calibration:
-  objectiveResolution_um_per_deg: 15   # 表示スケール用較正値
-  galvo_feedback:
-    x: calibrated
-    y: calibrated
-  waveform_test:
-    status: passed
-    note: "X: flyback 軽オーバーシュート + sweep 後半 軽 lag / Y: hold 中 ±15mV ジッタ"
-  waveform_optimize:
-    status: failed_vendor_issue
-    error:
-      - "feedbackPoints not recognized"
-      - "Tracking error unexpectedly increased"
-      - "Generated AO is empty"
-    handling: "skip for now; document in troubleshooting and report to MBF (case 25850)"
+# ---- fallback（方式B・別 NI ボード）----
+# 方式A が要件を満たさない場合のみ。BehaviorAcquisition.m（src/matlab/）が使う想定。
+fallback_method_b:
+  device: "Dev1（別 NI ボード）"
+  sync: "frame_clock TTL コピーを記録して bridge"
+  status: "保持（未使用）"
 
-reserved_for_future:
-  fastz:
-    device: PFM450E_PPC001
-    status: planned
-  injector_sync:
-    status: planned
-  behavior_logging:
-    status: planned
-  resonant_scanner:
-    status: planned
+provenance:
+  status: "PLAN — 実配線 / ScanImage Resource Config と突合して確定"
+  refs:
+    - "docs.scanimage.org/Basic+Features/Data+Recorder.html"
+    - "docs.scanimage.org/Concepts/Triggers/Auxiliary+Trigger.html"
+    - "docs/status.md §3（方式A 決定）"
