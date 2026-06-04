@@ -67,6 +67,11 @@ low_speed_ai:
        note: "報酬コマンドのモニタ(任意)"}
     # AI7-AI11 空き(behavior 追加用)
 
+# ---- injector trigger chain (t0 mechanism finalized 2026-06-04) ---- 
+injector_trigger:   { port: D3.2, dir: out, role: "WG 'Trig Legato130' TTL out", status: confirmed }
+injector_monitor:   { port: AI7,  dir: in,  role: "injector TTL -> Data Recorder (t0 正本, 全モード共通)", status: proposed }   # ← 追加。空き AI を要確認
+injector_aux:       { port: D2.1, dir: in,  role: "Aux Trigger 1 (resonant 時の任意クロスチェックのみ)", status: confirmed }
+
 # ---- frame-triggered 出力(injector など)= Route A: Waveform Generator ----
 digital_out:
   - line: "D3.2"
