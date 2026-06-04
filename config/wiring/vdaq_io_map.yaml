@@ -1,73 +1,114 @@
 # vDAQ I/O map — microscope_control_dev
 #
-# 方式A: behavior/aux は vDAQ 低速 AI を ScanImage "Data Recorder" で HDF5 記録し、
-#        injector TTL は "Auxiliary Trigger" で同時記録 TIFF に timestamp する
-#        （いずれも同一 vDAQ クロック。別 NI ボードは方式B fallback）。
+# 方式A: behavior/aux は vDAQ 低速 AI を ScanImage "Data Recorder" で HDF5 記録、
+#        TTL イベント（injector 発火など）は "Auxiliary Trigger" で TIFF に timestamp
+#        （同一 vDAQ クロック）。frame-triggered 出力（特定フレームで injector）は
+#        User Function (legatoFrameTrigger) ＋ DO で駆動。実発火は Aux Trigger に
+#        loopback して真の時刻を imaging クロック上に残す。
+#        ※ 出力の robust 化は Waveform Generator（FPGA タイミング）への移行が推奨。
 #
-# 注意: ここは **PLAN**。port 番号・信号名は breakout 実配線および ScanImage
-#       Resource Configuration（Data Recorder / Aux Trigger / Scanner 設定）と
-#       突合して確定すること。HSAI/AI/DIO の番号は仮。
+# 確定根拠: 公式 ScanImage vDAQ Wiring Diagram(IMG_9982) ＋ 実機 breakout 写真(IMG_9981)
+#   ＋ ScanImage Resource Config。
+#   status: confirmed = 公式図/写真で確認済み / proposed = 空きポートへの提案割当。
+#
+# DIO グループの向き制約(IMG_9982・重要):
+#   D0 = Inputs/Outputs(双方向) / D1 = Inputs/Outputs(双方向)
+#   D2 = Inputs Only           / D3 = Outputs Only
+#   → 出力(injector/clock 等)は D0/D1/D3、入力(aux trigger 等)は D0/D1/D2。
+#     D2.x を出力にはできない(D2.0 が Waveform Generator で選べなかった原因)。
 
 vdaq:
-  model: "vDAQ (Kintex UltraScale, PCIe)"
-  breakout: "low-speed AI x12 / AO x12 / DIO 4 groups x 8"
-  clock: "single vDAQ master clock（imaging と aux/Data Recorder が同一クロック）"
+  model: "Vidrio vDAQ (Kintex UltraScale, PCIe)"
+  breakout: "AI x12 (AI0-11) / AO x12 (AO0-11) / DIO 4 groups D0-D3 x8 = 32 lines / +5V / knob"
+  clock: "single vDAQ master clock(imaging と Data Recorder / Aux が同一クロック)"
+  dio_groups:
+    D0: "Inputs/Outputs"
+    D1: "Inputs/Outputs"
+    D2: "Inputs Only"
+    D3: "Outputs Only"
 
-# ---- imaging（高速 AI・PCIe bracket SMB, 4ch 125 MS/s）----
+# ---- 予約済み(標準配線で imaging/制御が使用・触らない) ----
+# IMG_9982 の公式アサインに準拠。galvo 機で Pockels/Z/resonant を使わない場合は
+# AI2/AI3・AO2-4・D2.0/D3.0 を再利用可(要・自分の構成での確認)。
+reserved_imaging:
+  - {port: "AI0",  signal: "X Galvo Feedback",        role: "scan_feedback", status: confirmed}
+  - {port: "AI1",  signal: "Y Galvo Feedback",        role: "scan_feedback", status: confirmed}
+  - {port: "AI2",  signal: "Power Feedback (Photodiode)", role: "beam_feedback", status: confirmed,
+     note: "Pockels/ビーム power モニタ。未使用なら behavior に再利用可"}
+  - {port: "AI3",  signal: "Z Feedback",              role: "z_feedback", status: confirmed,
+     note: "FastZ 導入時に使用。未使用なら behavior に再利用可"}
+  - {port: "AO0",  signal: "X Galvo Control",         role: "scan_control",  status: confirmed}
+  - {port: "AO1",  signal: "Y Galvo Control",         role: "scan_control",  status: confirmed}
+  - {port: "AO2",  signal: "Pockels Control",         role: "beam_control",  status: confirmed}
+  - {port: "AO3",  signal: "Z control",               role: "z_control",     status: confirmed}
+  - {port: "AO4",  signal: "Resonant Zoom",           role: "resonant",      status: confirmed,
+     note: "galvo 機では未使用の可能性"}
+  - {port: "D2.0", signal: "Resonant Sync",  role: "resonant", status: confirmed, note: "D2=Inputs Only"}
+  - {port: "D3.0", signal: "Resonant Enable",role: "resonant", status: confirmed, note: "D3=Outputs Only"}
+  - {port: "D3.1", signal: "Shutter (KSC101)", role: "shutter", status: confirmed,
+     note: "Thorlabs KSC101。写真でも点灯確認"}
+
+# ---- imaging 高速入力(この breakout ではなく PCIe 前面 SMB) ----
 high_speed_ai:
-  - {port: "HSAI0", signal: "PMT2100_ch0", role: "imaging_pmt"}
-  - {port: "HSAI1", signal: "PMT2100_ch1", role: "imaging_pmt"}
-  - {port: "HSAI2", signal: "custom_PD",   role: "imaging_pd", note: "自作PD（SRS系）"}
-  - {port: "HSAI3", signal: "PMT2100_ch3", role: "imaging_pmt"}
+  note: "PMT2100 x3 + 自作PD は前面 SMB(4ch 125 MS/s)。breakout の AIx ではない。要実機確認。"
+  # HSAI0 PMT ch0 / HSAI1 PMT ch1 / HSAI2 custom_PD / HSAI3 PMT ch3 (overview.md より)
 
-# ---- behavior / aux（低速 AI → Data Recorder で HDF5 記録）----
-# ScanImage: Resource Config に Data Recorder を追加 → 下の信号を登録。
-# signal name がそのまま HDF5 dataset 名になる（/ は不可）。
+# ---- behavior / aux(低速 AI -> Data Recorder, HDF5) ----
+# AI0/AI1=galvo feedback, AI2=Power FB, AI3=Z FB(公式図)。behavior は AI4 以降に置く。
+# (AI2/AI3 を実機で使っていないなら前倒し可。signal name = HDF5 dataset 名 / や空白不可)
 low_speed_ai:
   recorder: "ScanImage Data Recorder"
-  sample_rate_hz: 2000            # 1–5 kHz 想定。Data Recorder 範囲 500 Hz–500 kHz 内
+  sample_rate_hz: 2000            # 1-5 kHz 想定(Data Recorder 範囲 500 Hz-500 kHz 内)
   signals:
-    - {port: "AI0", name: "velocity",     range_v: [-10, 10], role: "behavior"}
-    - {port: "AI1", name: "lick",         range_v: [0, 5],    role: "behavior"}
-    - {port: "AI2", name: "reward_valve", range_v: [0, 5],    role: "behavior"}
-    - {port: "AI3", name: "visual_stim",  range_v: [0, 5],    role: "behavior"}
-    - {port: "AI4", name: "pupil_trig",   range_v: [0, 5],    role: "behavior"}
-    # 追加 behavior 信号はここに（最大 12ch）
+    - {port: "AI4", name: "velocity",   range_v: [-10, 10], role: "behavior", status: proposed,
+       note: "treadmill。quadrature encoder の場合は AI でなく DI 2 本+offline decode か HARP に寄せる(Phase 2)"}
+    - {port: "AI5", name: "lick",        range_v: [0, 5],   role: "behavior", status: proposed}
+    - {port: "AI6", name: "reward_mon",  range_v: [0, 5],   role: "behavior", status: proposed,
+       note: "報酬コマンドのモニタ(任意)"}
+    # AI7-AI11 空き(behavior 追加用)
 
-# ---- digital（injector など TTL イベント → Auxiliary Trigger）----
-digital:
-  - line: "DI group0/line0"
-    name: "injector"
-    role: "aux_trigger"
-    edge: "both"                  # 注入 on（rising）/ off（falling）
-    note: "Aux Trigger に接続して TIFF に timestamp。1 注入＝on/off の 2 edge（登録上限・推奨 ~10/frame 内）"
-  # 他イベント TTL（例: reward pulse）も Aux Trigger に追加可
+# ---- frame-triggered 出力(injector など)= Route A: Waveform Generator ----
+digital_out:
+  - line: "D3.2"
+    name: "injector_trigger"
+    device: "Waveform Generator 'Trig Legato130'"
+    role: "frame_triggered_out"
+    status: proposed
+    driver: "Waveform Generator(単発パルス・FPGA timing)。User Function は frame N で arm/start のみ"
+    note: "D3=Outputs Only。injector(KD Legato 130)へ＋下の D2.1 aux に loopback。D2.0 は入力専用で不可だった"
+  - line: "D3.3"
+    name: "frame_clock_out"
+    role: "sync_master"
+    status: proposed
+    note: "frame clock を出力(imaging system config > triggers タブ)。pupil camera / ephys へ撒く同期親線。D0/D1 でも可"
+  # 将来 opto 用に D3.4 等(出力)を確保
 
-# ---- frame ↔ behavior 同期（同一クロック前提の対応づけ）----
-frame_sync:
-  injection: "Aux Trigger timestamp（TIFF/metadata に frame 揃いで直接記録）"
-  continuous: "TODO — 次のどちらかを実機で確定:"
-  options:
-    - "(a) Data Recorder を imaging 開始 trigger で start（Use Trigger）"
-    - "(b) frame clock/marker を Data Recorder の 1ch（AI or DI）として記録し後処理で対応"
-  note: "同一 vDAQ クロックなので start を揃えれば対応は自明。どちらを正にするか実機で決める。"
+# ---- Auxiliary Trigger 入力(イベントを TIFF に timestamp) ----
+aux_trigger_in:
+  note: "FPGA・8 ns 分解能で TIFF header に timestamp。galvo モードで使えるか要実機確認(doc は resonant 記載)。"
+  lines:
+    - {port: "D2.1", name: "injector_aux", role: "timestamp", status: proposed,
+       source: "D3.2(injector_trigger) を BNC ジャンパで loopback",
+       note: "D2=Inputs Only で aux 入力に好適。host arm の jitter を回避し真の発火時刻を imaging クロックに残す"}
+    # 他イベント(reward pulse / 視覚刺激 onset の photodiode 等)も D2.x(入力)か Data Recorder DI へ
 
-# ---- analog out（scan/制御）----
-analog_out:
-  - {port: "AO0", signal: "galvo_X", role: "scan"}
-  - {port: "AO1", signal: "galvo_Y", role: "scan"}
-  # FastZ AO は将来（Tier 2）
+# ---- 空き(向き制約つき) ----
+free_ports:
+  analog_out: "AO5-AO11"
+  analog_in:  "AI7-AI11 (＋未使用なら AI2/AI3)"
+  digital_out_capable: "D0.x / D1.x(双方向) / D3.4-D3.7(出力専用)"
+  digital_in_capable:  "D0.x / D1.x(双方向) / D2.2-D2.7(入力専用)"
 
-# ---- fallback（方式B・別 NI ボード）----
-# 方式A が要件を満たさない場合のみ。BehaviorAcquisition.m（src/matlab/）が使う想定。
+# ---- fallback(方式B・別 NI ボード) ----
 fallback_method_b:
-  device: "Dev1（別 NI ボード）"
-  sync: "frame_clock TTL コピーを記録して bridge"
-  status: "保持（未使用）"
+  device: "別 NI ボード + BehaviorAcquisition.m(daq.createSession('ni'))"
+  status: "保持(未使用)。方式A が要件を満たさない場合のみ"
+  note: "vDAQ を別 session で握ると ScanImage と排他衝突(過去の DO 不動の原因)。vDAQ 上では使わない"
 
 provenance:
-  status: "PLAN — 実配線 / ScanImage Resource Config と突合して確定"
+  status: "reserved/向き制約は公式図 confirmed。behavior/injector/frame_clock/aux は proposed(実配線で確定)"
   refs:
-    - "docs.scanimage.org/Basic+Features/Data+Recorder.html"
-    - "docs.scanimage.org/Concepts/Triggers/Auxiliary+Trigger.html"
-    - "docs/status.md §3（方式A 決定）"
+    - "IMG_9982(公式 ScanImage vDAQ Wiring Diagram)"
+    - "IMG_9981(breakout 実機写真)"
+    - "docs.scanimage.org: Data Recorder / Auxiliary Trigger / Waveform Generator / Stage Scanning(frame clock 出力)"
+    - "docs/status.md §3(方式A)"
