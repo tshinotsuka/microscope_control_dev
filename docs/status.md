@@ -51,13 +51,15 @@ related:    sync_architecture.md / vdaq_io_map.yaml / strategy_roadmap.md / meth
 
 - **P1 完了**: `datarecorder_loader.py`（`src/python/`・`als_loader.py` の隣）が動作、**galvo go を数値確定**（上記 §1 の数値）。loader は frame rate を median 間隔から算出＋head/tail padding 報告。
 - **P3 draft 完了**: `trigger_sync.schema.json`（draft 2020-12・`als_sidecar.schema.json` の兄弟・galvo worked example・検証済・条件分岐で scan_mode↔anchor 強制）。doc 反映断片＝`trigger_sync_doc_notes.md`。**finalize は ALS/resonant 並走＋behavior ch 確定後**。
-- **P2（次）**: `als_loader` vs MATLAB `readLineScanDataFiles` 突合（offset pre/post・bidirectional・feedback ×12.5）。**要: rig で `als_ref_*.mat` を export**（Monitor Scanner Feedback ON の acquisition）。それまで offline は als_loader 単体＋比較ハーネスまで。二重計上しない（取得側 Tier1 #4）。
+- **P2 完了（single-line・exact）**: `compare_als_ref.py`（`src/python`・als_loader の隣）で `als_loader` 出力 ↔ `als_ref_*.mat`（readLineScanDataFiles）を突合。2 acq（`run-01_00002`=als_ref_00001 / `run-01_00003`=als_ref_00003・4ch・4ms/20ms cycle）で **PMT 生 counts as-is `max|Δ|=0` / scanner G native grid `max|Δ|=0`**。確定: **on-disk PMT=生 int16・pre-offset**（`subtract_offset=False` 忠実）・**single-line は bidi 反転不要**・**feedback ×12.5=`sampleRate/sampleRateFdbk`（非整数→補間）**。`als_loader` patch 済（`feedback_on_pmt_grid()` 追加・`pmt_to_volts` NOTE 確定）。**残: 2-line（run-02）は `als_ref` 未取得で multi-line bidi/segmentation 未検**。
+- **P3 emitter 済（galvo 検証）**: `make_trigger_sync.py`（`src/python`・`make_sidecar.py` の兄弟・datarecorder_loader を一方向 import）＋ schema validator。実 galvo `.h5` で emit→`[validate] OK`・**worked example をビット再現**（t0 4.5012／200 frame／16.72 Hz／head_pad 1.975／inject@frame43）。**bench で取れた `.h5` から sidecar を自動生成＋検証可**（galvo/als 対応・als は als_datafile 欠落を弾く）。`galvo_sidecar.json` 実体化。**schema gap 1 件**（als で `als_datafile:null` が schema を通る → finalize 時に als then-branch で `als_datafile:{type:string}`）。validator 用に `jsonschema` を ivwib `pyproject` に追記。**finalize は 3 mode 後**。
 - **P4（bench 後）**: 統合 unified timebase（ALS imaging＋sync `.h5` を 1 本へ・注入 t0 基準に整列）。
-- 解析側ログ詳細: `handoff_summary_20260605b.md`。
+- 解析側ログ詳細: `handoff_summary_20260606.md`。
 
 ## 改訂履歴
 
 | 日付 | 変更 |
 |---|---|
+| 2026-06-06 | 解析側 P2 完了（実機停止中・オフライン）: `compare_als_ref.py` で als_loader↔readLineScanDataFiles **exact**（2 acq・single-line・PMT/scanner とも `max|Δ|=0`）。on-disk PMT=生 counts・pre-offset／feedback ×12.5=rate 比（非整数補間）／single-line bidi 反転不要。`als_loader` patch（`feedback_on_pmt_grid` 追加・`pmt_to_volts` NOTE 確定・drop-in）。**P3 emitter `make_trigger_sync.py`＋validator** を galvo `.h5` で確立（schema VALID・worked example 再現・`galvo_sidecar.json` 実体化・schema gap 1 件）。`jsonschema` を ivwib pyproject に追記。§5 を P2 完了・P3 emitter 済に更新。残=2-line の als_ref。 |
 | 2026-06-05 (b) | 解析側 P1/P3 反映: `datarecorder_loader.py` で galvo go を数値確定（16.72 Hz=設定／t0=4.5012 s／inject@frame43／head pad 1.975 s）。**決定: recorder-start≠frame-0／frame_clock anchor／median rate**（§3.5）。`trigger_sync.schema.json` draft 化（galvo worked example・検証済）。§5 申し送りを P1 完了・P3 draft・P2 次へ更新。 |
 | 2026-06-05 (a) | 方式A e2e **galvo go**。Data Recorder device 追加・配線（AI7=injector t0／AI6=frame_clock←D0.0）・run-config（Auto Start ON）・UF 登録（acqModeStart 単発・frameAcquired 空）。HDF5 レイアウト確定（root `samplerate`／Recorded Name dataset／float32 拡張 chunk／t=idx/fs・実下限 3052 Hz→5000 採用）。受け入れテスト→16.7 Hz Grab で ①②③。33 Hz overflow=display-bound 仮説。ScanImage Table バグ cosmetic。 |

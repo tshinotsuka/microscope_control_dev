@@ -1,0 +1,31 @@
+{
+  "schema_version": "0.1.0",
+  "scan_mode": "galvo",
+  "samplerate_hz": 5000.0,
+  "datarecorder_file": "sub-ref_ses-01_cond-qc_run-03_00001.h5",
+  "als_datafile": null,
+  "signals": {
+    "injector_ttl": "Legato130_TTL",
+    "frame_clock": "frame_clock"
+  },
+  "t0": {
+    "source": "datarecorder_ttl_edge",
+    "dataset": "Legato130_TTL",
+    "edge": "rising",
+    "threshold_v": 2.538,
+    "sample_index": 22506,
+    "t0_recorder_s": 4.5012,
+    "n_edges": 1
+  },
+  "anchor": "frame_clock",
+  "physical_delay_offset_s": null,
+  "frame_timebase": {
+    "source": "frame_clock",
+    "n_frames": 200,
+    "rate_hz": 16.72,
+    "head_pad_s": 1.975,
+    "tail_pad_s": 0.035,
+    "inject_frame": 43,
+    "inject_offset_into_frame_ms": 10.8
+  }
+}

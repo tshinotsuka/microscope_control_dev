@@ -12,7 +12,9 @@ So a C-order reshape to (n_cycles, samples_per_cycle, n_channels) yields
 [cycle, sample, channel].
 
 Verified against SI Premium 2026.0.0 line-scan output. The official MATLAB
-equivalent is scanimage.util.readLineScanDataFiles(stem).
+equivalent is scanimage.util.readLineScanDataFiles(stem); PMT counts and
+scanner feedback have been cross-checked bit-exact against it (max|delta|=0
+over 2 acquisitions, 4 ch, 4 ms & 20 ms cycles; 2026-06-05, compare_als_ref.py).
 """
 from __future__ import annotations
 
@@ -212,8 +214,12 @@ def load_scnnr(path: str, info: AcqInfo) -> np.ndarray:
 def pmt_to_volts(pmt: np.ndarray, info: AcqInfo, subtract_offset: bool = False) -> np.ndarray:
     """Convert raw int16 counts to volts using per-channel input range.
 
-    NOTE: whether on-disk data is pre/post offset is not 100% documented;
-    leave subtract_offset=False until cross-checked vs readLineScanDataFiles.
+    On-disk PMT is RAW int16 counts, PRE-offset: cross-checked bit-exact against
+    scanimage.util.readLineScanDataFiles (max|delta|=0 over 2 acquisitions, 4 ch,
+    4 ms & 20 ms cycles; 2026-06-05). readLineScanDataFiles returns the same raw
+    counts, so subtract_offset=False is the fidelity-preserving default. Set
+    subtract_offset=True only as a deliberate analysis choice; per-channel offsets
+    live in info.channel_offsets.
     """
     out = pmt.astype(np.float64)
     nch = pmt.shape[-1]
@@ -319,6 +325,43 @@ def segment_samples(si: dict, roi_group: dict) -> dict:
     }
 
 
+# --------------------------------------------------------------------------- #
+# feedback alignment (scanner -> PMT grid)
+# --------------------------------------------------------------------------- #
+def _resample_cycle(x: np.ndarray, n_out: int) -> np.ndarray:
+    """Linear-interpolate (n_cycles, n_in, K) onto n_out samples per cycle on
+    normalized cycle phase [0, 1). Vectorized across cycles and channels; the
+    factor n_out / n_in need NOT be integer. Output samples whose phase exceeds
+    the last input sample hold that last value (np.interp-style tail clamp)."""
+    n_cyc, n_in, K = x.shape
+    if n_in == n_out:
+        return x.astype(np.float64)
+    pos = np.arange(n_out, dtype=np.float64) * n_in / n_out   # source index per output sample
+    left = np.minimum(np.floor(pos).astype(int), n_in - 1)
+    right = np.minimum(left + 1, n_in - 1)
+    frac = (pos - left)[None, :, None]               # (1, n_out, 1)
+    s = x.astype(np.float64)
+    return (1.0 - frac) * s[:, left, :] + frac * s[:, right, :]
+
+
+def feedback_on_pmt_grid(ls: "LineScan") -> np.ndarray:
+    """Upsample scanner feedback onto the PMT grid so every PMT sample carries an
+    (X, Y[, Z]) position.
+
+    Feedback is recorded at sampleRateFdbk (fewer samples/cycle) than PMT at
+    sampleRate; the ratio (= pmt_sample_rate / fdbk_sample_rate, e.g. 12.5) is
+    generally NON-integer, so this is interpolation, not block-repeat. Linear
+    interpolation on normalized cycle phase.
+
+    Returns float64 (n_cycles, pmt_samples_per_cycle, fdbk_channels). The native
+    feedback grid is bit-exact vs readLineScanDataFiles (2026-06-05); this
+    upsample is the downstream primitive built on top of that verified read.
+    """
+    if ls.scnnr is None:
+        raise ValueError("no scanner feedback (record_feedback off or .scnnr.dat absent)")
+    return _resample_cycle(ls.scnnr, ls.info.pmt_samples_per_cycle)
+
+
 if __name__ == "__main__":
     import sys
 
@@ -337,5 +380,7 @@ if __name__ == "__main__":
         print(f"pmt array     : {ls.pmt.shape}  {ls.pmt.dtype}  [cycle,sample,channel]")
     if ls.scnnr is not None:
         print(f"scnnr array   : {ls.scnnr.shape}  {ls.scnnr.dtype}  [cycle,sample,XY]")
+        up = feedback_on_pmt_grid(ls)
+        print(f"fdbk->pmt grid: {up.shape}  (x{i.pmt_sample_rate / i.fdbk_sample_rate:g} upsample)")
     rg = ls.roi_group.get("RoiGroups", {}).get("imagingRoiGroup", {})
     print(f"roi group     : {rg.get('name','?')}")
