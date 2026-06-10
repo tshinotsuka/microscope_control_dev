@@ -6,73 +6,87 @@ priority_truth: in_vivo_water_imaging_brain/docs/strategy_roadmap.md（優先順
 scope:      Tier 順・各モダリティの実装状態・次手。設計の正は sync_architecture.md（loose coupling）。
 related:    sync_architecture.md / vdaq_io_map.yaml / strategy_roadmap.md / method_a_e2e_gonogo_sop.md
             / method_a_als_bench_runsheet_*.md / trigger_sync.schema.json
-            / datarecorder_loader.py / als_loader.py / als_inject_align.py / diag_ttl.py
-注:         本稿は 2026-06-08 時点の現行版（galvo go＋ALS go＋解析側 P1/P2/P3 反映）。
+            / datarecorder_loader.py / als_loader.py / als_inject_align.py / diag_ttl.py / sweep_quality.py
+注:         本稿は 2026-06-09 時点の現行版（galvo go＋ALS go〔single+multi-line〕＋次フェーズ戦略反映）。
 ```
 
 ---
 
-## 1. 現在地（2026-06-08）
+## 1. 現在地（2026-06-09）
 
-方式A e2e go/no-go：**galvo go ＋ ALS go**（いずれも実機で数値確定）。
+方式A e2e go/no-go：**galvo go ＋ ALS go（single-line ＋ multi-line/3-line）**。3 mode のうち galvo・ALS を確定、resonant は据え置き。
 
 - **galvo 段 go**（既出・16.7 Hz）: ①overflow 無し ②imaging 中も injector TTL を HDF5 記録 ③injector edge と frame_clock が同一 HDF5・同一クロック。t0=4.5012 s／200 frame／median 16.72 Hz／head_pad 1.975 s／inject@frame43。
-- **ALS 段 go（2026-06-08・single-line）**:
-  - **branch A clock 成立＝配線変更ゼロ**。既存 `D0.0→AI6` frame-clock-out が **ALS でも cycle ごとに出る**（各 cycle＝内部 "frame"）。`als_inject_align.py` が `frame_clock` を ALS cycle clock として検出 `[OK]`（run-02_00003: 500 Hz・2ms cycle／run-02_00007: 1000 Hz・1ms cycle・いずれも 10000/10000 edges）。
-  - **residual offset（ALS head_pad）を毎 grab 測定**: 3.4856 / 3.1302 / 3.2608 s（**可変**。固定値で仮定せず clock から毎回取る）。
-  - ①overflow 無し ②injector TTL が HDF5・**ALS と device 競合なし**（10000/10000 cycle 完走）③`als_datafile_timing` 整列＝branch A clock で達成。
-  - **injector 着弾確認（run-02_00007・delaySec=6）**: cycle #2871 に着弾。TTL は単発 5V・218.6 ms（clean）。
+- **ALS 段 go（single-line・2026-06-08）**: branch A clock 成立＝配線変更ゼロ（既存 `D0.0→AI6` が ALS でも cycle ごとに出る）。residual（ALS head_pad）3.1–3.5 s・可変＝clock で毎回測定。①overflow 無し ②injector TTL が HDF5・device 競合なし（10000/10000 cycle 完走）③`als_datafile_timing` 整列。injector 着弾（run-02_00007・delaySec=6）cycle #2871。
+- **ALS multi-line go（3-line・2026-06-09・run-01_00005）**:
+  - cycle 6.0 ms（166.67 Hz）・5000 cyc × 3 line = 30.0 s（recorder 32.256 s @ 5000 Hz）。**pause-before-each-line で line skip 無し**（galvo park せず）。
+  - ①overflow 無し（5000/5000 cyc 完走）②injector TTL 単発 5V・208.8 ms clean（`diag_ttl`: edges@2.5V=1・frac_high=0.006・high@6.1256 s）・ALS と device 競合なし ③branch A clock `[OK]` 5000/5000 edges @166.67 Hz・**residual（head_pad）=2.1974 s**（前回 3.1–3.5 と別値＝可変・毎 grab clock 測定の設計通り）。
+  - injector 着弾: cycle #655（+4.4 ms）。ROI5（pause）着弾は **無害**（t0／cycle 割り当て堅牢・下流整列は per-cycle）。
+  - **掃引品質 PASS（multi-line 初）**: `sweep_quality.py` で per-cycle pp 一定（median 4.92／5th 4.904／median/5th=1.00／全 5000 cyc・decay 無し）。旧 run-01_00002 の startup-only park（pp≈0.1）と対照 → **multi-line の per-line 解析が信頼可能**に。
 
-→ **3 mode のうち galvo・ALS の 2 つが確定**。**resonant は実機不在で据え置き**（§2）。残りは finalize と in vivo gate 準備（§5）。
+→ sync 正本は galvo＋ALS（single+multi-line）で実機確定。残りは **本番前ゲート 2 件**（§2 最優先）と並行トラック（§2.5）。**resonant は実機不在で据え置き**。
 
 ## 2. Tier 順（次手）
 
-- **Tier0（実機）**: galvo ✓ / **ALS ✓（single-line）** / **resonant＝据え置き（hardware 無し・今は無視）**。
-- **ALS multi-line（in vivo は 4-line 想定）**: **4-line grab が ScanImage の ROI GUI バグで未完**（§4）。loader 検証自体は 2-line で済（§5）。実機復帰時に GUI バグを解消して 4-line を取得。
-- **本番前**: Data Recorder File Directory を imaging と同 stem（`raw/`）へ。`logFramesPerFile=Inf`（§4）。
-- **finalize（2 mode で先行可）**: resonant 据え置きにより「3 mode 揃い」を **galvo+ALS の 2 mode finalize** に縮小。resonant は将来枠。`trigger_sync.schema.json` を version up・`signals.behavior` 追加・`$id` 確定・**`als_datafile_timing` ブロック追加**・**als then-branch の als_datafile gap 修正**。
+- **Tier0（実機・sync 正本）**: galvo ✓ / ALS ✓（single + multi-line/3-line）/ resonant＝据え置き。
+- **ALS 4-line**: in vivo は 4-line 想定だが **機構は 3-line で検証済**（cycle-based・line 数非依存）。4 本目取得は ROI GUI Add バグ次第だが**できる見込み＝blocker 扱いしない**（GUI 再現時のみ programmatic builder で回避、保険として用意済・未実行）。
+
+### 2.1 本番前ゲート（最優先・これが通れば実験移行を検討）
+
+1. **1-min scan stop の原因探索＋改善**（in vivo は数分連続が要る独立ゲート・§4 に仮説）。
+2. **決まったフレームでの投与（fixed-frame injection）の導入**: 現行 delaySec（host timer）は head_pad 可変ゆえ毎回同 cycle に当たらない。**cycle-clock カウント／FPGA frame-trigger** へ移行し deterministic cycle で撃つ。per-frame host UF は overflow 要因なので不可（§3.5）。
+
+### 2.2 並行トラック（上記と並走）
+
+- **behavior 記録・解析**: Data Recorder（同 vDAQ clock・同 HDF5）に behavior ch を拡張、解析側に取り込み。
+- **FastZ 導入**: fast focus を vDAQ clock 同期で ALS／imaging に統合（多深度・volumetric）。
+- **データ解析の一本化**: 散在ツール（datarecorder/als loader・compare_als_ref・make_trigger_sync・als_inject_align・diag_ttl・sweep_quality）を raw→sync→per-line→QC の単一パイプラインへ統合。契約＝`trigger_sync.schema.json`。
+- **injection／behavior GUI 作成**（上記の先）: `syncControlPanel.m` を起点に operator UX を集約。
 
 ## 3. behavior 入力経路（Data Recorder）
 
 - Data Recorder を device 追加済。HDF5 出力。**run-config**: Auto Start ON（Grab 同期＝共通 acq-start）／Use Trigger OFF／Sample Rate 5000／Duration Inf。
 - **HDF5 レイアウト（確定）**: root group `/` attr `samplerate`（全 ch 共通）／dataset 名 = Recorded Name／float32・MaxSize Inf・ChunkSize／attr `units`/`conversionMultiplier`／**time vector 無し → t = index / samplerate**。
-- galvo・ALS とも 4ch 取り込み＋保存を実機確認。
+- galvo・ALS とも 4ch 取り込み＋保存を実機確認。**behavior ch 拡張は §2.2 トラックで具体化**。
 
 ## 3.5 injector（acqModeStart 単発・t0 機構）
 
 - 配線: `D3.2`(WG) → T 分岐 → `AI7` = Data Recorder で TTL 記録（**t0 正本**）／`D2.1`(Aux・resonant 任意)／Legato 本体。frame clock を `D0.0` 出力 → `AI6`。
 - UF: `acqModeStart`→`syncArmStart` ／ `acqAbort`・`acqDone`→`syncDisarm`。**`frameAcquired` 空**（overflow 回避の要）。
-- t0 = Data Recorder TTL edge を **galvo・ALS とも実機確認**。scan モード非依存。
-- **決定: recorder-start ≠ frame/cycle-0**。head_pad 非ゼロ（galvo 1.975 s／**ALS 3.1–3.5 s・可変**）。注入は **galvo/resonant=`frame_clock` アンカー／ALS=`als_datafile_timing`（branch A clock）**。recorder-start にはアンカーしない。
-- **ALS は `delaySec` 指定（`targetFrame` 不使用）。決定（2026-06-08）: `delaySec > head_pad` が必須**。`delaySec=2` は head_pad（~3.13 s）内に落ちて cycle に乗らなかった → **`delaySec=6` 採用**で cycle 着弾。head_pad の原因（シャッター等）は不問＝着弾 cycle は clock で毎回測る。
+- t0 = Data Recorder TTL edge を galvo・ALS とも実機確認。scan モード非依存。
+- **決定: recorder-start ≠ frame/cycle-0**。head_pad 非ゼロ（galvo 1.975 s／ALS 2.2–3.5 s・可変）。注入は galvo/resonant=`frame_clock` アンカー／ALS=`als_datafile_timing`（branch A clock）。
+- **現行: ALS は `delaySec=6`（>head_pad）で cycle 着弾**。これは「いずれかの cycle に確実に乗る」を保証するが **cycle index は run ごとに変わる**（head_pad 可変ゆえ）。
+- **次フェーズ（§2.1-2）: 決まった cycle で撃つ**には host timer ではなく clock カウント／frame-trigger が要る。候補: ①ScanImage targetFrame trigger が ALS で使えるか ②vDAQ FPGA で frame_clock（既存 D0.0）のエッジを数え cycle N で injector TTL を発火 ③branch A clock を counter 入力に。**per-frame host UF は不可**。
 - 物理到達遅延は別途キャリブの定数オフセット（`physical_delay_offset_s`・t0 に折り込まない）。
 
 ## 4. 既知の注意
 
-- **33 Hz overflow**: 同期 UF は acqModeStart 1 回で per-frame 負荷ゼロ → display/保存側が原因と判断。A/B 未。
-- **ALS ROI GUI バグ（4-line 取得の blocker・2026-06-08）**: 4 本目の ROI 追加で `scanimage.gui.ArbitraryLineScanRoiGui>addRoi() (行 77)` → `most.gui.style(uibutton(... 'Add ROI' ...))` → `executeUserCallback` でエラー。**sync コードは無関係**（console で injector arm/ON/OFF 正常）。root メッセージは未取得（MATLAB を閉じた）。MATLAB R2025b と SI GUI styling の相性疑い＝**ベンダー GUI バグ候補（Optimize Waveform MBF 25850 と束ねて報告）**。回避: SI 再起動／保存 ROI group ロード／programmatic ROI／root エラー取得（`disp(lasterr)`）。
-- **ファイル命名（一部解決・2026-06-08）**: ALS は `[stem][file counter].meta.txt/.pmt.dat/.scnnr.dat`（**`_00001` カウンタは SI 仕様・消せない＝stem に含めて扱う**）。空の 0 KB `_00002` はロール由来 → **`hScan2D.logFramesPerFile = Inf` で解消**（ALS で確認）。**`logFramesPerFile` はスキャナごと**: raster へ切替時は別スキャナなので未設定だと再発しうる。raster の `_00001_00001.tif`（二重番号）は **SI 標準 TIFF 命名 `<base>_<acq>_<file>.tif`・実データあり＝空ファイル問題ではない**。空 raster が出たら raster スキャナでも Inf。
-- **旧 ALS データの掃引品質（2026-06-08 発見）**: `20260601 cond-cagegfpfixed run-01_00002`（fixed sample 試験）の scanner feedback は **startup cycle 0–4 だけ掃引、以降は線内 pp≈ノイズ（0.08–0.13）で galvo がほぼ park・mean 位置ドリフト**（pp>1 は 358/5000 cycle のみ）。**galvo が線パスをトレースしていない回**（Optimize Waveform 未最適化＝MBF 25850 の線が濃厚）。loader 検証（§5）は exact で無関係に成立するが、**per-line 解析には不適**。→ 最近の grab（Reset/Calibrate 運用後）が毎 cycle 掃いているかを `.scnnr.dat` の cycle 別 pp で要確認（実験品質チェック）。
-- **ScanImage GUI Table バグ（cosmetic・既出）**: DataRecorderPage の表示ハイライトのみ。記録は正常。
+- **1-min scan stop（最優先・原因探索中・2026-06-09）**: 長め grab が ~1 分で停止。**第1仮説＝有限フレーム数設定**。166.67 Hz×60 s ≈ 10000 cycle で、既出の「10000/10000 edges」運用とも符合 → `framesPerSlice` / `acqNumFrames` / ALS cycle 数 / `logFramesPerFile` の有限値を疑う。**まず Inf 化して再試**。停まらなければ次に ②166 Hz での frame queue / display buffer overflow（display off／低 rate で切り分け・abort message を必ず取る）③Data Recorder の sample 上限 ④ディスク書込みスループット（PMT+scnnr+recorder の同時書込み vs D: 速度）。**停止時の console / lasterr を必ず確保**（前回 ROI GUI バグで取り損ねた教訓）。
+- **33 Hz overflow（既出）**: 同期 UF は acqModeStart 1 回で per-frame 負荷ゼロ → display/保存側が原因と判断。1-min stop と同系か要切り分け。
+- **ALS ROI GUI Add バグ（4-line 取得時）**: `ArbitraryLineScanRoiGui>addRoi() (行 77)` → `most.gui.style(uibutton(... 'Add ROI' ...))`。3-line では未発生。回避: SI 再起動／保存 ROI ロード／2-line 複製／programmatic builder（用意済）。再現なら MBF 報告（Optimize Waveform MBF 25850 と束ねる）。
+- **掃引品質チェック手順（確立・2026-06-09）**: `sweep_quality.py` で `.scnnr.dat` の per-cycle pp。5th percentile が線サイズ相当（noise floor ~0.1 でない）＝全 cycle 掃引で PASS。startup だけ大きく以降小なら park 病（旧 run-01_00002）。
+- **ファイル命名（既出）**: 空 0 KB `_00002` は `hScan2D.logFramesPerFile=Inf` で解消（**per-scanner**・raster へ切替時は要再設定）。`_00001` カウンタは SI 仕様で消せない＝stem 扱い。raster の `_00001_00001.tif` は SI 標準 TIFF 命名。
+- **Optimize Waveform 不可（MBF 25850）**: 運用は **Reset Waveform → Calibrate + Test**。
+- **ScanImage GUI Table バグ（cosmetic・既出）**: DataRecorderPage 表示ハイライトのみ。記録は正常。
 
 ## 5. 解析側への申し送り
 
-> loader は依存軽量（numpy+h5py）で取得 repo `src/python` に single source、解析が一方向 import。取得 PC は極小 quicklook env（numpy+h5py）で go/no-go ③ をその場確認可。schema validation は jsonschema（ivwib）。
+> loader は依存軽量（numpy+h5py）で取得 repo `src/python` に single source、解析が一方向 import。schema validation は jsonschema（ivwib）。
 
-- **P1 完了（既出）**: `datarecorder_loader.py` で galvo go 数値確定（median 16.72 Hz／t0 4.5012／head_pad 1.975／inject@frame43）。
-- **P2 完了（single-line exact・既出 ＋ 2-line も exact・2026-06-08）**: `compare_als_ref.py` で `als_loader ↔ readLineScanDataFiles`。**run-01_00002（2-line・bidi ON・feedback）でも PMT raw_counts `max|Δ|=0`／scanner native as_is `max|Δ|=0`**。cycle 単位 bidi は `as_is`（反転不要・single-line と同結論）。**Track-W B の loader read は multi-line も含めて closed**。
-  - **重要（プラン訂正）**: `readLineScanDataFiles` は cycle 丸ごとを返し **per-ROI に割らない**ため、「per-line 分割を als_ref と突合」は**比較対象が無く成立しない**＝当初プラン取り下げ。
-  - **per-line orientation/flip は下流（kymograph）の話**で loader gate ではない。線は傾く（ROI 1 rot 10°／ROI 2 rot 345°）→ 線軸へ射影して判定。**run-01_00002 は掃引品質不良（§4）で測れない** → クリーンな multi-line（in-vivo 4-line・calibrated 波形）で実施。
-- **P3 emitter 済（既出）＋ ③ harness 新規（2026-06-08）**: `als_inject_align.py`（`src/python`・両 loader を一方向 import・numpy+h5py のみで動作）。Data Recorder `.h5`＋ALS `.meta.txt` から **injector t0 を ALS timeline に整列**、**residual offset（ALS head_pad）を算出**。branch A（clock loopback・測定）／branch B（common acq-start 近似・residual 不可測で cycle 不確かさ ~head_pad/T_cyc を警告）の両分岐。`als_datafile_timing` ブロックを emit（schema finalize 時に取り込む）。実 galvo `.h5`＋合成 fixture（per-cycle/per-line/flat）＋実 ALS で検証済。
-- **`diag_ttl.py` 新規（2026-06-08）**: Data Recorder の TTL ch を特徴づけ（edge 数・周期性・最長 HIGH 区間・VERDICT）。AI7 が injector TTL を載せているかの即時切り分け用（今回 AI7 path 不通＝flat mV ノイズを検出 → path 修正で単発 5V に復旧）。
-- **resonant 据え置き**: schema finalize は galvo+ALS の 2 mode で先行（resonant は将来枠）。
-- 解析側ログ詳細: `handoff_summary_20260608.md`。
+- **P1 完了（既出）**: `datarecorder_loader.py` で galvo go 数値確定。
+- **P2 完了（single + 2-line exact・既出）**: `compare_als_ref.py` で `als_loader ↔ readLineScanDataFiles` が `max|Δ|=0`。**Track-W B loader read は multi-line まで closed**。`readLineScanDataFiles` は cycle 丸ごとを返し per-ROI に割らない＝per-line orientation は下流（kymograph）。
+- **③ harness `als_inject_align.py`（既出）**: branch A/B、residual 算出、`als_datafile_timing` emit。
+- **`diag_ttl.py`（既出）**: TTL ch 特徴づけ（injector が AI7 に載っているかの即時切り分け）。
+- **`sweep_quality.py`（新規・2026-06-09）**: `.scnnr.dat` の per-cycle 2D pp で掃引品質（park 病検出）。`src/python`・`als_loader` 一方向 import・numpy（plot は matplotlib 任意）。run-01_00005（3-line）で **PASS**。NumPy 2.x 対応（`np.ptp`）。
+- **解析一本化（§2.2）**: 上記を単一パイプライン（raw→sync→per-line→QC）へ。詳細は解析側 handoff。
+- 解析側ログ詳細: `handoff_summary_20260609.md`。
 
 ## 改訂履歴
 
 | 日付 | 変更 |
 |---|---|
-| 2026-06-08 | **方式A ALS go（single-line）**。branch A clock 成立＝既存 D0.0→AI6 が ALS cycle clock を載せる（配線変更ゼロ）。residual（ALS head_pad）3.1–3.5 s・可変＝clock で毎回測定。injector: AI7 path 不通を `diag_ttl.py` で検出→修正（単発 5V）／**`delaySec > head_pad` 必須＝`delaySec=6` で cycle 着弾**。新ツール `als_inject_align.py`（③ harness）・`diag_ttl.py`。**P2 を 2-line でも exact**（run-01_00002・`max|Δ|=0`）＝Track-W B loader closed（multi-line 含む）。「per-line 分割を als_ref 突合」案は取り下げ（als_ref に per-line 参照無し）。per-line orientation は下流＋要クリーンデータ（旧 run-01_00002 は掃引不良）。**resonant 据え置き**→finalize を 2 mode 化。ファイル命名 `logFramesPerFile=Inf`（per-scanner）。4-line は ROI GUI バグで未完。 |
-| 2026-06-06 | 解析側 P2（single-line exact）・als_loader patch・trigger_sync emitter（galvo `.h5` で schema VALID・worked example 再現）。jsonschema を ivwib pyproject へ。 |
-| 2026-06-05 (b) | P1: datarecorder_loader で galvo go 数値確定。決定: recorder-start≠frame-0／frame_clock anchor／median rate。trigger_sync schema draft 化。 |
+| 2026-06-09 | **方式A ALS go を multi-line（3-line）へ拡張**（run-01_00005）。cycle 6.0ms/166.67Hz・5000cyc×3line=30s。①overflow無 ②injector 単発5V 208.8ms clean・競合無 ③branch A clock [OK] 5000/5000・residual 2.1974s。injector cycle#655 着弾（ROI5 pause＝無害）。pause-before-each-line で line skip 無し。**掃引品質 PASS**（新ツール `sweep_quality.py`: per-cycle pp median 4.92・5th 4.904・全cyc安定＝park病なし）。次フェーズ戦略反映: 最優先＝①1-min stop 原因探索＋改善 ②決まったフレーム投与（clock/frame-trigger 化）→通れば実験移行。並行＝behavior 記録解析・FastZ 導入・解析一本化・injection/behavior GUI。4-line はできる見込みで skip、より速い ALS は次回最適化案。 |
+| 2026-06-08 | **方式A ALS go（single-line）**。branch A clock 成立（配線変更ゼロ）。residual 3.1–3.5s 可変＝毎 grab 測定。injector AI7 path 修正（単発5V）・`delaySec>head_pad`（=6）で cycle 着弾。新ツール `als_inject_align.py`・`diag_ttl.py`。P2 2-line exact＝Track-W B loader closed。resonant 据え置き→finalize 2 mode 化。`logFramesPerFile=Inf`（per-scanner）。4-line は ROI GUI バグで未完。 |
+| 2026-06-06 | 解析側 P2（single-line exact）・trigger_sync emitter（galvo `.h5` で schema VALID）。jsonschema を ivwib へ。 |
+| 2026-06-05 (b) | P1: galvo go 数値確定。決定: recorder-start≠frame-0／frame_clock anchor／median rate。trigger_sync schema draft 化。 |
 | 2026-06-05 (a) | 方式A e2e **galvo go**。Data Recorder 配線・run-config・UF 登録・HDF5 レイアウト確定・受け入れ ①②③。 |
