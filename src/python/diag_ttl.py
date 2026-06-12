@@ -21,7 +21,7 @@ import datarecorder_loader as DR
 # --- edit this path (or pass it on the command line) ----------------------- #
 DEFAULT_H5 = (
     r"D:\YasuiLab\workspace\2026_microscope_control_dev"
-    r"\20260609_sub-ref_ses-01\sub-ref_ses-01_cond-qc_run-01_00005.h5"
+    r"\20260610_sub-ref_ses-01\sub-ref_ses-01_cond-qc_run-02_00005.h5"
 )
 
 p = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_H5
