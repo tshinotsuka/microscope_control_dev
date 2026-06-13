@@ -4,9 +4,17 @@
 #   injector イベントの t0 正本 = Data Recorder に録った injector TTL エッジ（AI7・全 scan モード共通・2026-06-04 決定）。
 #   injector は acqModeStart 単発 UF (syncArmStart) で WG 'Trig Legato130'(D3.2) を発火 → AI7 で Data Recorder 記録。
 #   Aux Trigger(D2.1 -> TIFF) は resonant 時の任意クロスチェックに格下げ（galvo は TIFF aux に依存しない）。
-#   frame clock を D0.0 出力 -> AI6 ループバックで Data Recorder 記録 = galvo/resonant の整列クロスチェック。
+#   frame clock を D0.0 出力 -> T 分岐 -> AI6 ループバック(Data Recorder 記録) ＋ D2.2(WG Start Trigger 入力)。
+#     ※ ALS でも D0.0 は cycle ごとに出る(branch A clock)。旧「ALS は frame 無」は誤りで修正済(2026-06-08)。
 #   recorder-start ≠ frame-0（Auto-Start head pad ~2 s 実測 2026-06-05）のため、注入は frame_clock にアンカーする。
 #   出力は Waveform Generator(FPGA タイミング)で駆動。User Function は acqModeStart で arm/start のみ（per-frame 禁止）。
+#
+#   [fixed-frame injection 機構・2026-06-12・検証残] host timer(delaySec)は head_pad 可変で deterministic でない。
+#     → WG 'Trig Legato130' を frame clock で hardware-trigger する: D0.0 を T 分岐で D2.2 へ渡し(D0.0 は
+#       vDAQgalvo 所有で WG が trigger に予約不可・D2 は Inputs Only で WG-ownable)、WG Start Trigger=/vDAQ0/D2.2(rising)。
+#     注意: WG task は grab 前に widget で Start(arm) しないと出力しない(Resource Config の Apply だけでは task 未起動)。
+#       syncArmStart の「acqModeStart で WG arm」化が済むまで手動 Start。continuous は永続 on で one-shot 不適 → finite 単発。
+#       Start=N×cycle で着弾 cycle 指定。検証=als_inject_align で複数 run の着弾 cycle 一致。
 #
 # 確定根拠: 公式 ScanImage vDAQ Wiring Diagram(IMG_9982) ＋ 実機 breakout 写真(IMG_9981)
 #   ＋ ScanImage Resource Config ＋ 2026-06-05 galvo e2e bench（injector/frame_clock を実配線・実記録で confirmed）。
@@ -68,15 +76,21 @@ low_speed_ai:
        note: "報酬コマンドのモニタ(任意)。旧 AI6 から移動(AI6 は frame_clock に確定したため)"}
     # AI9-AI11 空き(behavior 追加用)
 
-# ---- injector trigger chain (t0 mechanism finalized 2026-06-04; galvo confirmed 2026-06-05) ----
-injector_trigger:   { port: D3.2, dir: out, role: "WG 'Trig Legato130' TTL out (acqModeStart 単発 syncArmStart)", status: confirmed }
-injector_monitor:   { port: AI7,  dir: in,  role: "injector TTL -> Data Recorder 'Legato130_TTL' (t0 正本, 全モード共通)", status: confirmed }  # galvo 実機記録確認
-injector_aux:       { port: D2.1, dir: in,  role: "Aux Trigger 1 (resonant 時の任意クロスチェックのみ)", status: confirmed }
+# ---- injector trigger chain (t0 mechanism finalized 2026-06-04; galvo confirmed 2026-06-05; WG frame-trigger 2026-06-12) ----
+injector_trigger:   { port: D3.2, dir: out, role: "WG 'Trig Legato130' TTL out (acqModeStart 単発 syncArmStart)", status: confirmed,
+                      start_trigger: "/vDAQ0/D2.2 (rising) = frame clock loopback",
+                      note: "2026-06-12: WG を frame clock で hardware-trigger 化(検証残)。WG task は grab 前に widget で Start(arm) 必須(Apply だけでは無出力)。continuous は永続 on→finite 単発・Start=N×cycle で着弾 cycle 指定。" }
+injector_monitor:   { port: AI7,  dir: in,  role: "injector TTL -> Data Recorder 'Legato130_TTL' (t0 正本, 全モード共通)", status: confirmed }  # galvo/ALS 実機記録確認(run-06_00005/00007 clean 単発)
+injector_aux:       { port: D2.1, dir: in,  role: "Aux Trigger 1 (resonant 時の任意クロスチェックのみ・scanner Aux trigger 1 に loopback・無害)", status: confirmed }
 
-# ---- frame clock chain (alignment cross-check; galvo confirmed 2026-06-05) ----
+# ---- frame clock chain (alignment cross-check; galvo confirmed 2026-06-05; D2.2 split 2026-06-12) ----
 # recorder-start≠frame-0 のため、frame_clock を録って注入を frame アンカーする。
-frame_clock_out:     { port: D0.0, dir: out, role: "imaging frame clock out (imaging system config > Triggers タブで D0.0 に割当)", status: confirmed }  # 旧 proposed D3.3 -> D0.0 に変更・使用
-frame_clock_monitor: { port: AI6,  dir: in,  role: "frame clock -> Data Recorder 'frame_clock' (D0.0 ループバック; galvo/resonant のみ・ALS は frame 無)", status: confirmed }
+# D0.0(出力) を T 分岐: AI6(記録ループバック) ＋ D2.2(WG Start Trigger 入力)。
+frame_clock_out:     { port: D0.0, dir: out, role: "imaging frame clock out (imaging system config > Triggers タブで D0.0 に割当・vDAQgalvo 所有)", status: confirmed }  # 旧 proposed D3.3 -> D0.0 に変更・使用
+frame_clock_monitor: { port: AI6,  dir: in,  role: "frame clock -> Data Recorder 'frame_clock' (D0.0 ループバック)", status: confirmed,
+                      note: "ALS でも cycle ごとに出る(branch A clock・各 cycle=内部 frame)。旧『ALS は frame 無』は誤りで修正済(2026-06-08)。" }
+wg_trigger_in:       { port: D2.2, dir: in,  role: "WG 'Trig Legato130' の Start Trigger 入力 = D0.0 frame clock の T 分岐(2026-06-12)", status: confirmed,
+                      note: "D0.0 は vDAQgalvo 所有で WG が trigger に予約不可 → 物理 T 分岐で D2.2(D2=Inputs Only・WG-ownable)へ。出力→入力なので T 分岐安全。" }
 
 # ---- frame-triggered 出力 = Route A: Waveform Generator ----
 digital_out:
@@ -85,13 +99,13 @@ digital_out:
     device: "Waveform Generator 'Trig Legato130'"
     role: "frame_triggered_out"
     status: confirmed
-    driver: "WG 単発パルス(FPGA timing)。syncArmStart が acqModeStart で arm(delaySec/targetFrame)・per-frame callback なし"
-    note: "D3=Outputs Only。injector(KD Legato 130)へ＋ D2.1 aux に loopback(resonant cross-check)。D2.0 は入力専用で不可だった"
+    driver: "WG 単発パルス(FPGA timing)。2026-06-12: frame clock(D2.2)で hardware-trigger 化(検証残)。grab 前に widget で Start(arm) 必須。syncArmStart は acqModeStart で arm/start のみ・per-frame callback なし"
+    note: "D3=Outputs Only。injector(KD Legato 130)へ＋ D2.1 aux に loopback(resonant cross-check)。D2.0 は入力専用で不可だった。Start Trigger=/vDAQ0/D2.2(rising)。"
   - line: "D0.0"
     name: "frame_clock_out"
     role: "sync_master"
     status: confirmed
-    note: "frame clock を D0.0 に出力(imaging system config > Triggers タブ)。AI6 にループバックして Data Recorder 記録(整列)。Phase2 で pupil camera/ephys へも同線を撒く。旧 D3.3 提案は解放。"
+    note: "frame clock を D0.0 に出力(imaging system config > Triggers タブ・vDAQgalvo 所有)。T 分岐: AI6 ループバック(Data Recorder 記録・整列) ＋ D2.2(WG Start Trigger 入力・2026-06-12)。Phase2 で pupil camera/ephys へも同線。旧 D3.3 提案は解放。"
   # 将来 opto 用に D3.3-D3.7 等(出力)を確保
 
 # ---- Auxiliary Trigger 入力(イベントを TIFF に timestamp) ----
@@ -108,7 +122,7 @@ free_ports:
   analog_out: "AO5-AO11"
   analog_in:  "AI9-AI11 (＋未使用なら AI2/AI3)"   # AI6=frame_clock, AI7=injector, AI8=reward_mon に割当済
   digital_out_capable: "D0.1-D0.7 / D1.x(双方向) / D3.3-D3.7(出力専用・D3.2=injector 使用中)"
-  digital_in_capable:  "D0.x(D0.0 除く) / D1.x(双方向) / D2.2-D2.7(入力専用・D2.0/D2.1 使用中)"
+  digital_in_capable:  "D0.x(D0.0 除く) / D1.x(双方向) / D2.3-D2.7(入力専用・D2.0/D2.1/D2.2 使用中)"   # D2.2=WG Start Trigger(frame clock 分岐・2026-06-12)
 
 # ---- fallback(方式B・別 NI ボード) ----
 fallback_method_b:
@@ -122,5 +136,6 @@ provenance:
     - "IMG_9982(公式 ScanImage vDAQ Wiring Diagram)"
     - "IMG_9981(breakout 実機写真)"
     - "2026-06-05 galvo e2e bench(injector AI7 t0・frame_clock D0.0->AI6 を実記録で確認; method_a_e2e_gonogo_sop.md)"
+    - "2026-06-12 fixed-frame bench(WG 'Trig Legato130' を frame clock で trigger・D0.0->D2.2 分岐・widget arm 必須を確認; run-06_00005/00007 で AI7 clean 単発記録・検証残)"
     - "docs.scanimage.org: Data Recorder / Auxiliary Trigger / Waveform Generator / Stage Scanning(frame clock 出力)"
     - "docs/status.md §3/§3.5(方式A) / sync_architecture.md §2-§3 / trigger_sync.schema.json"
