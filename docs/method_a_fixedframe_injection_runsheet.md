@@ -28,6 +28,16 @@ related:        NEXT_SESSION_kickoff.md §1, handoff_summary_20260612.md §2A, t
 > 同時に立証する。free-run なら cycle がばらつくので、trigger 有効性 vs free-run の切り分けも兼ねる。
 > ①（1-min stop）は **closed・やり直さない**（roadmap §5 gate①）。
 
+### セッションスコープ（rig 必須を 1 パスに）
+
+このセッションの **spine = gate②**。同じ grab に**相乗り**して、もう 2 件の rig 必須 gate も同時に潰す（別 grab を増やさない）：
+
+- **R1（相乗り・無条件）＝ 契約 emission の実機検証（roadmap §5 gate 条件 2・☐）**: gate② の取得が吐く stem / 自動 metadata / ALS 3 ファイル（`.meta.txt`/`.pmt.dat`/`.scnnr.dat`）が契約どおりか突合（§4.5）。追加ハード不要。
+- **R2（相乗り・条件付き）＝ behavior ch 記録（Tier-0・☐）**: behavior センサが**配線済みなら** Data Recorder に ch 追加して gate② grab で同 HDF5 に録る（§1.6）。**未配線なら今回スキップ**（唯一それ自体がハードゲートされうる）。
+- **R3（gate② PASS 後）＝ syncArmStart v2 の API 確定**（§6）。
+
+> in-vivo 不可逆取得に進むのは、gate②（§5）＋ R1（§4.5）が PASS してから。R2 はハード次第で別セッション可。
+
 ---
 
 ## 1. preflight（grab 前・配線と config）
@@ -54,7 +64,12 @@ related:        NEXT_SESSION_kickoff.md §1, handoff_summary_20260612.md §2A, t
 - `acqModeStart → syncArmStart` ／ `acqAbort`・`acqDone → syncDisarm` ／ **`frameAcquired` 空**（overflow 回避の要）。
 - ※ 本セッションは syncArmStart 旧版のままで可（WG arm は §2 で手動）。自動 arm 化は §6（PASS 後）。
 
-> **GO/NO-GO ①（preflight）**: 1.1〜1.5 を全て確認 → GO。配線/Recorder ch のどれか不一致なら直してから先へ。
+### 1.6 behavior ch（R2・条件付き＝センサ配線済みのときだけ）
+- behavior センサが**配線済みなら** Data Recorder run-config に ch 追加：`AI4=velocity` ／ `AI5=lick` ／ `AI8=reward_mon`（`vdaq_io_map.yaml` low_speed_ai の proposed・実配線で確定）。AI6/AI7 は frame_clock/injector で**使用中＝触らない**。
+- 名前は HDF5 dataset 名になる（空白・`/` 不可）。同 vDAQ clock・同 HDF5・同 stem。
+- **未配線なら本行はスキップ**（gate② / R1 は behavior 無しで成立する）。
+
+> **GO/NO-GO ①（preflight）**: 1.1〜1.5 を全て確認（＋配線済みなら 1.6）→ GO。配線/Recorder ch のどれか不一致なら直してから先へ。
 
 ---
 
@@ -100,9 +115,23 @@ related:        NEXT_SESSION_kickoff.md §1, handoff_summary_20260612.md §2A, t
 2. `als_inject_align.py` … branch A clock `[OK]`・**着弾 cycle 番号**を記録。
    - clock が `[OK]`（N/N or 境界 off-by-one）でないなら §7 C。
 3.（任意）`sweep_quality.py` … per-cycle pp PASS（park 病が無いこと）。掃引品質に疑義がある回のみ。
+4.（R2・behavior 録った回のみ）`datarecorder_loader.py` … behavior ch が同 HDF5 に入り、同 samplerate・同尺で読めることを確認。
 
 > **GO/NO-GO ③（各 run）**: diag_ttl 単発 ✓ ＋ als_inject_align clock [OK] ＋ 着弾 cycle 取得 → この run は採用。
 > 1 でも欠ければこの run は破棄して §7 で原因を潰し、設定を直して取り直す。
+
+## 4.5 契約 emission 検証（R1・gate 条件 2・session 1 回）
+
+> gate② の採用 run の **どれか 1 つ**で 1 回やれば足りる（全 run 不要）。追加 grab 不要。
+> 突合先＝解析側 `file_naming.md` / `metadata_schema.md`（契約の正本）。
+
+採用 run の出力ファイル群を見て、契約どおりかを突合:
+1. **stem / ファイル名**: 人間意図情報のみ（mouse/session/condition/run）か。装置が知る情報（**scanner_type / scan_mode / parameters はファイル名でなく metadata**）がファイル名に漏れていないか。ScanImage 連番 `_0000N` は仕様として末尾に残る（`_00001` は stem 扱い・消せない）。
+2. **ALS 3 ファイル**: `.meta.txt` / `.pmt.dat` / `.scnnr.dat` が stem 共通で揃っているか。空 0 KB の `_00002` が出ていないか（`logFramesPerFile=Inf`・per-scanner で抑止済みのはず）。
+3. **自動 metadata**: SI が吐く metadata（`scanner_type=als` 等）が `metadata_schema.md` のフィールド・語彙（cond 文法・`channels[].name`・`sample_rate`・クロックドメイン註）と矛盾しないか。Ch 役割（Ch0/1/3=PMT2100・**Ch2=自作 PD/SRS**）が `channels[].name` の意味付けと整合するか。
+4. **Data Recorder HDF5**: root attr `samplerate`／dataset 名 = Recorded Name／float32／time vector 無し（t=index/samplerate）。本番前は File Directory を temp から imaging と同 stem（`raw/`）へ。
+
+> **GO/NO-GO（R1）**: 1〜4 が契約どおり → gate 条件 2 PASS。ズレがあれば、それは **取得設定 or 契約 doc の修正点**（不可逆取得前に直す最後の窓・roadmap §3「本実験を 1 枚も撮る前が契約修正コスト最小」）。直して再 emit を確認。
 
 ---
 
@@ -143,6 +172,8 @@ related:        NEXT_SESSION_kickoff.md §1, handoff_summary_20260612.md §2A, t
 
 ## 8. このセッションで触る/残すドキュメント
 
-- 触る（PASS 後・in-place）: `status.md §2.1`（gate② ◐→☑）、`strategy_roadmap.md §5 gate2`（②を PASS に・ミラー）、新 `handoff_summary_<YYYYMMDD>.md`。
+- 触る（PASS 後・in-place）: `status.md §2.1`（gate② ◐→☑）、`strategy_roadmap.md §5 gate2`（②を PASS に・**gate 条件 2＝R1 も ☐→☑**・ミラー）、新 `handoff_summary_<YYYYMMDD>.md`。
+- R1 で契約ズレが出たら: 解析側 `file_naming.md` / `metadata_schema.md`（契約の正本・両 project 同期）。
+- R2（behavior 録ったら）: `vdaq_io_map.yaml` low_speed_ai を proposed→confirmed、`status.md §3`、解析側 `signals.behavior`（schema は対応済）。
 - v2 を入れたら: `syncArmStart.m`（arm 版）、`vdaq_io_map.yaml` の injector_trigger 注記（arm 自動化）。
 - 不変: t0 正本（AI7 = Data Recorder TTL edge）・`als_inject_align.py`・`trigger_sync.schema.json`（解析側契約）。
