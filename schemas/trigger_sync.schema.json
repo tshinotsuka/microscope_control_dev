@@ -1,8 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://yasuilab.example/schemas/trigger_sync.schema.json",
+  "$comment": "FINALIZE TODO ($id): replace the 'yasuilab.example' placeholder host with the SAME host used by the sibling als_sidecar.schema.json so the two ids share a namespace. One-line swap; kept as placeholder here because the sibling's published location was not in hand at finalize time (2026-06-12).",
   "title": "trigger_sync sidecar",
-  "description": "Per-acquisition cross-modal alignment metadata. The injection time-zero (t0) is the recorded injector TTL edge in the Data Recorder HDF5 -- scan-mode independent (sync_architecture.md s2, 2026-06-04). Injection is correlated to imaging via 'anchor' (frame_clock for galvo/resonant; ALS data-file timing for ALS), NEVER via recorder-start: the recorder (Auto Start) begins before the first frame, so head_pad_s is non-zero (recorder-start != frame-0). Metadata-over-filenames: scan parameters live here, not in filenames. Sibling of als_sidecar.schema.json.",
+  "description": "Per-acquisition cross-modal alignment metadata. The injection time-zero (t0) is the recorded injector TTL edge in the Data Recorder HDF5 -- scan-mode independent (sync_architecture.md s2, 2026-06-04). Injection is correlated to imaging via 'anchor' (frame_clock for galvo/resonant; ALS data-file timing for ALS), NEVER via recorder-start: the recorder (Auto Start) begins before the first frame, so head_pad_s is non-zero (recorder-start != frame-0). Metadata-over-filenames: scan parameters live here, not in filenames. Sibling of als_sidecar.schema.json. FINALIZED to the galvo+ALS 2-mode contract (2026-06-12): resonant remains a reserved enum value (hardware absent) and is handled by the else-branch like galvo until its own then-branch is added.",
   "type": "object",
   "required": [
     "schema_version",
@@ -18,11 +19,11 @@
     "schema_version": {
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
-      "description": "Semantic version of this sidecar's schema."
+      "description": "Semantic version of this sidecar's schema. Bumped 0.1.0 -> 0.2.0 at the galvo+ALS 2-mode finalize (adds the required als_datafile_timing block for ALS; non-null als_datafile for ALS)."
     },
     "scan_mode": {
       "enum": ["galvo", "als", "resonant"],
-      "description": "Imaging scan mode for this acquisition. Lives in metadata, not the filename."
+      "description": "Imaging scan mode for this acquisition. Lives in metadata, not the filename. 'resonant' is reserved (hardware absent); until a resonant then-branch exists it is validated by the else-branch alongside galvo (frame_clock anchor)."
     },
     "samplerate_hz": {
       "type": "number",
@@ -36,7 +37,7 @@
     "als_datafile": {
       "type": ["string", "null"],
       "default": null,
-      "description": "ALS data stem (no extension, e.g. 'sub-..._00001') for readLineScanDataFiles. Required when scan_mode == 'als'; null otherwise."
+      "description": "ALS data stem (no extension, e.g. 'sub-..._00001') for readLineScanDataFiles. REQUIRED and non-null when scan_mode == 'als' (enforced in the ALS then-branch); MUST be null otherwise."
     },
     "signals": {
       "type": "object",
@@ -49,20 +50,21 @@
         },
         "frame_clock": {
           "type": ["string", "null"],
-          "description": "HDF5 dataset name for the frame clock; null for ALS (no per-frame clock)."
+          "description": "HDF5 dataset name for the frame clock. Non-null string for galvo/resonant (the D0.0->AI6 loopback); MUST be null for ALS (no per-frame clock dataset -- ALS cycle timing comes from als_datafile_timing's branch-A clock, not this dataset). Enforced per-mode in then/else."
         },
         "behavior": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Optional behavior channel dataset names (velocity, lick, reward, ...)."
+          "description": "Optional behavior channel dataset names (velocity, lick, reward, ...). Same Data Recorder HDF5, same vDAQ clock."
         }
       }
     },
     "t0": { "$ref": "#/$defs/t0" },
     "frame_timebase": { "$ref": "#/$defs/frame_timebase" },
+    "als_datafile_timing": { "$ref": "#/$defs/als_datafile_timing" },
     "anchor": {
       "enum": ["frame_clock", "als_datafile_timing"],
-      "description": "How injection is correlated to imaging. 'frame_clock' (galvo/resonant) = anchor t0 to the frame_clock pulse train. 'als_datafile_timing' (ALS) = common acq-start + ALS data-file timing. NEVER anchor to recorder-start: head_pad_s is non-zero."
+      "description": "How injection is correlated to imaging. 'frame_clock' (galvo/resonant) = anchor t0 to the frame_clock pulse train. 'als_datafile_timing' (ALS) = common acq-start + ALS branch-A cycle clock. NEVER anchor to recorder-start: head_pad_s is non-zero."
     },
     "physical_delay_offset_s": {
       "type": ["number", "null"],
@@ -75,7 +77,7 @@
       "type": "object",
       "required": ["source", "dataset", "edge", "sample_index", "t0_recorder_s"],
       "additionalProperties": false,
-      "description": "Injection time-zero = the recorded TTL edge. This is analysis time-zero.",
+      "description": "Injection time-zero = the recorded TTL edge. This is analysis time-zero. Scan-mode independent (same for galvo/als/resonant).",
       "properties": {
         "source": {
           "const": "datarecorder_ttl_edge",
@@ -105,7 +107,7 @@
         "n_edges": {
           "type": "integer",
           "minimum": 0,
-          "description": "Sanity count of detected edges; expect 1 for a single pulse."
+          "description": "Sanity count of detected edges; expect 1 for a single pulse (diag_ttl.py)."
         }
       }
     },
@@ -113,7 +115,7 @@
       "type": "object",
       "required": ["source", "n_frames", "rate_hz", "head_pad_s", "tail_pad_s"],
       "additionalProperties": false,
-      "description": "Frame timing from frame_clock (galvo/resonant). Omit for ALS.",
+      "description": "Frame timing from frame_clock (galvo/resonant). Present ONLY for galvo/resonant; forbidden for ALS (use als_datafile_timing).",
       "properties": {
         "source": { "const": "frame_clock" },
         "n_frames": {
@@ -145,24 +147,84 @@
           "description": "Time from the inject_frame's start to the t0 edge."
         }
       }
+    },
+    "als_datafile_timing": {
+      "type": "object",
+      "required": ["source", "n_cycles", "cycle_rate_hz", "head_pad_s"],
+      "additionalProperties": false,
+      "description": "ALS cycle timing -- the ALS analogue of frame_timebase. Present ONLY for ALS; forbidden for galvo/resonant. Each ALS cycle is an internal 'frame': the existing D0.0->AI6 frame-clock loopback emits one edge per cycle ('branch A clock', als_inject_align.py). recorder-start != cycle-0, so head_pad_s (the ALS 'residual') is non-zero and VARIABLE run-to-run (~2.2-3.5 s) -- it MUST be measured per grab from the branch-A clock, never assumed constant. Deviation from frame_timebase: tail_pad_s is OPTIONAL here (ALS residual work anchors on the head).",
+      "properties": {
+        "source": {
+          "const": "als_branch_a_clock",
+          "description": "ALS cycle timing comes from the branch-A clock = D0.0->AI6 frame-clock loopback, which emits one rising edge per ALS cycle (als_inject_align.py)."
+        },
+        "n_cycles": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Branch-A clock rising edges = ALS cycles detected. A boundary off-by-one vs the commanded cycle count (e.g. 49999 vs 50000) is acceptable ([OK] in als_inject_align)."
+        },
+        "n_cycles_commanded": {
+          "type": ["integer", "null"],
+          "description": "Commanded cycle count (framesPerSlice x numSlices x numVolumes) for cross-check against n_cycles. Optional."
+        },
+        "cycle_rate_hz": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Cycle rate from the MEDIAN inter-cycle interval of the branch-A clock (e.g. 166.67 Hz for a 6.0 ms cycle). Do NOT compute as n_cycles / total_duration."
+        },
+        "head_pad_s": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Recorder-start to first cycle = the ALS 'residual'. Non-zero and VARIABLE per grab (~2.2-3.5 s). Measured from the branch-A clock every acquisition; never assumed constant."
+        },
+        "tail_pad_s": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Last cycle to recorder-stop. Optional for ALS."
+        },
+        "inject_cycle": {
+          "type": ["integer", "null"],
+          "description": "Cycle index the injection edge fell in (cycle-anchored). Use this, not t0_recorder_s, to correlate injection with imaging. For the deterministic fixed-frame mechanism this should equal the commanded N across runs (gate 2 PASS)."
+        },
+        "inject_offset_into_cycle_ms": {
+          "type": ["number", "null"],
+          "description": "Time from the inject_cycle's start to the t0 edge."
+        }
+      }
     }
   },
   "allOf": [
     {
       "if": { "properties": { "scan_mode": { "const": "als" } }, "required": ["scan_mode"] },
       "then": {
-        "properties": { "anchor": { "const": "als_datafile_timing" } },
-        "required": ["als_datafile"]
+        "properties": {
+          "anchor": { "const": "als_datafile_timing" },
+          "als_datafile": { "type": "string" },
+          "als_datafile_timing": { "$ref": "#/$defs/als_datafile_timing" },
+          "frame_timebase": false,
+          "signals": {
+            "properties": { "frame_clock": { "type": "null" } }
+          }
+        },
+        "required": ["als_datafile", "als_datafile_timing"]
       },
       "else": {
-        "properties": { "anchor": { "const": "frame_clock" } },
+        "properties": {
+          "anchor": { "const": "frame_clock" },
+          "als_datafile": { "type": "null" },
+          "als_datafile_timing": false,
+          "signals": {
+            "properties": { "frame_clock": { "type": "string" } },
+            "required": ["frame_clock"]
+          }
+        },
         "required": ["frame_timebase"]
       }
     }
   ],
   "examples": [
     {
-      "schema_version": "0.1.0",
+      "schema_version": "0.2.0",
       "scan_mode": "galvo",
       "samplerate_hz": 5000.0,
       "datarecorder_file": "sub-ref_ses-01_cond-qc_run-03_00001.h5",
@@ -190,6 +252,37 @@
         "inject_offset_into_frame_ms": 10.8
       },
       "anchor": "frame_clock",
+      "physical_delay_offset_s": null
+    },
+    {
+      "schema_version": "0.2.0",
+      "scan_mode": "als",
+      "samplerate_hz": 5000.0,
+      "datarecorder_file": "sub-ref_ses-01_cond-qc_run-02_00001.h5",
+      "als_datafile": "sub-ref_ses-01_cond-qc_run-02_00001",
+      "signals": {
+        "injector_ttl": "Legato130_TTL",
+        "frame_clock": null
+      },
+      "t0": {
+        "source": "datarecorder_ttl_edge",
+        "dataset": "Legato130_TTL",
+        "edge": "rising",
+        "threshold_v": 2.5,
+        "sample_index": 25826,
+        "t0_recorder_s": 5.1652,
+        "n_edges": 1
+      },
+      "als_datafile_timing": {
+        "source": "als_branch_a_clock",
+        "n_cycles": 49999,
+        "n_cycles_commanded": 50000,
+        "cycle_rate_hz": 166.67,
+        "head_pad_s": 2.2426,
+        "inject_cycle": 487,
+        "inject_offset_into_cycle_ms": 0.6
+      },
+      "anchor": "als_datafile_timing",
       "physical_delay_offset_s": null
     }
   ]

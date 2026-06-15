@@ -66,6 +66,21 @@ MouseLand（Facemap/DLC は後段解析）。
 
 > 物理線の正本は `config/wiring/vdaq_io_map.yaml`（injector `D3.2`/`AI7`・frame_clock `D0.0`/`AI6` は 2026-06-05 confirmed）。
 
+## 3.5 fixed-frame injection（deterministic cycle・2026-06-12 機構特定／検証は runsheet）
+
+注入は host timer（delaySec）では head_pad 可変ゆえ deterministic でない（cycle index が run ごとに
+変わる・例 #655/#487）。→ injector の WG 'Trig Legato130'(D3.2) を frame clock で hardware-trigger する。
+
+- trigger source: frame clock out `D0.0`（vDAQgalvo 所有）を物理 T 分岐で `D2.2` へ。D0.0 は WG が
+  trigger に予約できない（registration error）ため、D2(Inputs Only) の `D2.2` を WG-ownable な
+  trigger 入力に使う。WG Start Trigger = `/vDAQ0/D2.2`（rising）。出力→入力の分岐なので安全。
+- arm 規約: WG task は grab 前に Start(arm) が必要（Resource Config の Apply だけでは task 未起動＝無出力）。
+  暫定は widget で手動 Start、最終は acqModeStart UF（syncArmStart v2）で arm。per-frame UF は不可（overflow）。
+- waveform: finite 単発（continuous は永続 on で one-shot 不適）。`Start = N×cycle_period` で着弾 cycle N を指定。
+  pulse 幅 = Duty%×Period ≈ 0.2 s。
+- t0 正本は不変: WG 出力 D3.2 を T 分岐で AI7（Data Recorder 'Legato130_TTL'）に録る（§2・§3）。解析側 als_inject_align は不変。
+- 検証（→ method_a_fixedframe_injection_runsheet.md）: finite 単発の正 config で複数 run を取り直し、
+  als_inject_align の着弾 cycle が全 run で N に一致すれば deterministic 成立＝本番前ゲート② PASS。
 ---
 
 ## 4. 設計ルール（lessons）
