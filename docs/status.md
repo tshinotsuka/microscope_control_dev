@@ -1,110 +1,87 @@
-# Status — 取得側（microscope_control_dev）ベンチ進捗
+# status.md 更新パッチ（2026-06-17）— 貼り込み用
 
 ```
-更新方法:   この 1 ファイルを in-place 更新（dated にしない）。取得系ベンチ進捗の正本＝これ。
-priority_truth: in_vivo_water_imaging_brain/docs/strategy_roadmap.md（優先順位の単一の正）
-scope:      Tier 順・各モダリティの実装状態・次手。設計の正は sync_architecture.md（loose coupling）。
-related:    sync_architecture.md / vdaq_io_map.yaml / strategy_roadmap.md / method_a_e2e_gonogo_sop.md
-            / method_a_als_bench_runsheet_*.md / trigger_sync.schema.json
-            / datarecorder_loader.py / als_loader.py / als_inject_align.py / diag_ttl.py / sweep_quality.py
-注:         本稿は 2026-06-12 時点の現行版（galvo go＋ALS go〔single+multi-line/4-line〕／本番前ゲート①=closed・②=機構特定・検証残／injector を WG frame-trigger 化）。
+適用先:   microscope_control_dev/docs/status.md（in-place 更新・dated にしない方針）
+内容:     ゲート② = WG 方式 ALS 行き止まり確定＋DoTask ピボット。
+          §1 先頭・§2.1②・§3.5・§4・改訂履歴 の 5 か所を差し替え/追記。
+note:     本ファイルはパッチ集。status.md へ手で反映したら破棄してよい。
 ```
 
 ---
 
-## 1. 現在地（2026-06-12）
+## ① §1「現在地」先頭に挿入（既存 2026-06-12 ブロックの**上**へ）
 
-**2026-06-12 更新（本番前ゲートの進捗）**
+```markdown
+**2026-06-17 更新（ゲート② = WG 方式 ALS 行き止まり確定・DoTask ピボット）**
 
-- **ゲート①（1-min scan stop）＝closed**。原因は fault ではなく **有限 `hSI.hStackManager.framesPerSlice`**（ALS では cycle 数。総 grab frame = `framesPerSlice × numSlices × numVolumes`。旧「10000/10000 edges」も 166.67 Hz×60 s の programmed 完走で、停止＝正常終了）。実 4-line config で数分連続完走 → `Inf` 化で持続を確認。post-hoc QC `run-02_00001`（4-line・400 s）＝diag_ttl ✓／als_inject_align ✓（49999/50000・residual 2.2426 s・inject cycle #487）／`sweep_quality.py` ✓ **PASS**（50000 cyc・pp ~9.5 一定・decay 無し。4-line は経路が広く 3-line ~4.92 比で妥当）。
-- **ゲート②（fixed-frame injection）＝機構特定・検証残**。host timer（`delaySec`・head_pad 可変）を排し、**ScanImage Waveform Generator 'Trig Legato130'(D3.2) を frame clock で hardware-trigger** する方式を特定。`D0.0`(frame clock out・vDAQgalvo 所有＝WG が予約不可) を **物理 T 分岐で `D2.2` へ** → WG Start Trigger=`/vDAQ0/D2.2`(rising)。**鍵＝WG task は grab 前に widget で Start(arm) が必要**（Resource Config の Apply だけでは task が起動せず無出力）。widget Start → grab で **AI7 に clean 単発を記録**（`run-06_00005`/`00007`・`diag_ttl` edges@2.5V=1）。continuous は止めるまで永続 on で one-shot 不適 → **finite 化が次手**（「must write buffer」は config 変更で buffer 空のまま start した為）。**検証残（次回・§2.1②）＝既存 continuous run は存在証明のみとし、finite 単発の正 config でクリーンに取り直す**: ①finite＋Start Trigger=`D2.2`＋短パルス＋`Start=N×cycle` に設定 → ②同一設定で複数 run 取得 → ③各 run で `als_inject_align` の着弾 cycle 一致（=trigger 有効＝frame clock 同期・one-shot・cycle 指定を同時確認・free-run なら cycle がばらつくので切り分けも兼ねる）で **gate② PASS** → ④`syncArmStart` を「acqModeStart で WG arm」版へ。配線は §3.5／`vdaq_io_map.yaml`（D0.0→D2.2 追加）。
+- **ゲート②（fixed-frame injection）= WG（ScanImage WaveformGenerator）方式は ALS で行き止まり確定**。`startTask` 自体が毎回 `updateWaveform→computeWaveform→refreshWvfmParams→hSI.hScan2D.scannerset.linePeriod(ss)` で波形を再計算し、`GalvoGalvo.linePeriod`（行 489）が `assert(isa(scanfield,'ImagingField'))` を持つため **ALS の `StimulusField` で必ず落ちる**（フルスタック取得・2026-06-17 17:33）。**pre-compute は無意味**（startTask が作り直す）・**Show Widget OFF も無効**（widget 再描画でなく startTask 内部の再計算が原因）。`[sync] armed` は**偽陽性**だった（SI の ErrorHandler が内部の linePeriod / must-write を握り潰し try/catch に伝播せず「正常終了」に見えた＝task 未起動・AI7 flat）。**SI の制約であり当方ロジックの問題ではない**。
+- **白と確認できたもの（実機・2026-06-17）**: frame clock `D0.0→AI6` = **125.0 Hz（8.0 ms/cycle・4-line）** clean train（**cycle rate 確定**）／**D2.2 分岐が生きてる**（D2.2 行きケーブルを空き AI9 で録ると 125 Hz/5V）／**WG 本体＋D3.2→AI7 経路は正常**（トリガ無し Test B で clean 単発 edges@2.5V=1・max 5.09V）／**behavior** `AI4=treadmill_dir`・`AI5=treadmill_speed` が HDF5 signals に入る。詰まりは「WG task を ALS 中に起こす方法が原理的に無い」点に集約。
+- **次の一手 = v4：WG をバイパスし自前の `dabs.vidrio.ddi.rdi.DoTask` を D3.2 に立てて D2.2 trigger で撃つ**（§3.5・§2.1②）。WG（'TrigLegato130-2'）を Remove して D3.2 を解放 → `createDoTask→addChannel('D3.2')→cfgSampClkTiming(finite)→cfgDigEdgeStartTrig('/vDAQ0/D2.2','rising')→writeOutputBuffer→start`。linePeriod を踏まないので ALS 中も start できる見込み（= v4 の分水嶺・未確認）。DoTask API 取得済。
 
-以下 2026-06-09 時点の確定（multi-line go）は据え置き。
+```
 
 ---
 
-方式A e2e go/no-go：**galvo go ＋ ALS go（single-line ＋ multi-line/3-line・4-line config 取得実績あり）**。3 mode のうち galvo・ALS を確定、resonant は据え置き。
+## ② §2.1 の項目 2 を**全文差し替え**
 
-- **galvo 段 go**（既出・16.7 Hz）: ①overflow 無し ②imaging 中も injector TTL を HDF5 記録 ③injector edge と frame_clock が同一 HDF5・同一クロック。t0=4.5012 s／200 frame／median 16.72 Hz／head_pad 1.975 s／inject@frame43。
-- **ALS 段 go（single-line・2026-06-08）**: branch A clock 成立＝配線変更ゼロ（既存 `D0.0→AI6` が ALS でも cycle ごとに出る）。residual（ALS head_pad）3.1–3.5 s・可変＝clock で毎回測定。①overflow 無し ②injector TTL が HDF5・device 競合なし（10000/10000 cycle 完走）③`als_datafile_timing` 整列。injector 着弾（run-02_00007・delaySec=6）cycle #2871。
-- **ALS multi-line go（3-line・2026-06-09・run-01_00005）**:
-  - cycle 6.0 ms（166.67 Hz）・5000 cyc × 3 line = 30.0 s（recorder 32.256 s @ 5000 Hz）。**pause-before-each-line で line skip 無し**（galvo park せず）。
-  - ①overflow 無し（5000/5000 cyc 完走）②injector TTL 単発 5V・208.8 ms clean（`diag_ttl`: edges@2.5V=1・frac_high=0.006・high@6.1256 s）・ALS と device 競合なし ③branch A clock `[OK]` 5000/5000 edges @166.67 Hz・**residual（head_pad）=2.1974 s**（前回 3.1–3.5 と別値＝可変・毎 grab clock 測定の設計通り）。
-  - injector 着弾: cycle #655（+4.4 ms）。ROI5（pause）着弾は **無害**（t0／cycle 割り当て堅牢・下流整列は per-cycle）。
-  - **掃引品質 PASS（multi-line 初）**: `sweep_quality.py` で per-cycle pp 一定（median 4.92／5th 4.904／median/5th=1.00／全 5000 cyc・decay 無し）。旧 run-01_00002 の startup-only park（pp≈0.1）と対照 → **multi-line の per-line 解析が信頼可能**に。
+差し替え対象（既存）:
+> 2. **決まったフレームでの投与（fixed-frame injection）＝機構特定・検証残（2026-06-12）**。…（WG widget arm 前提の段落）
 
-→ sync 正本は galvo＋ALS（single+multi-line）で実機確定。残りは **本番前ゲート 2 件**（§2 最優先）と並行トラック（§2.5）。**resonant は実機不在で据え置き**。
+差し替え後:
 
-## 2. Tier 順（次手）
+```markdown
+2. **決まったフレームでの投与（fixed-frame injection）＝WG 方式 ALS 行き止まり確定・DoTask へピボット（2026-06-17）**。現行 `delaySec`（host timer）は head_pad 可変ゆえ毎回同 cycle に当たらず deterministic でない。当初狙った **WG hardware-trigger（`D0.0`→`D2.2`）は、ScanImage の generic WaveformGenerator が ALS scan mode で arm（startTask）できないため不可**（`startTask`→`updateWaveform`→`computeWaveform`→`linePeriod` の再計算が ALS の `StimulusField` で assert 落ち・§3.5/§4）。**WG 方式は却下・再試行しない**。**次手＝v4：WG を Remove して D3.2 を解放し、自前の `dabs.vidrio.ddi.rdi.DoTask` を D3.2 に立てて `D2.2`(rising) で hardware-trigger**（linePeriod 非依存）。手順: ①WG Remove → ②`createDoTask`→`addChannel('D3.2')`→`cfgSampClkTiming(R_Hz,'finite',nSamp)`→`cfgDigEdgeStartTrig('/vDAQ0/D2.2','rising')`→`writeOutputBuffer(pulseVec)`→`start()`（着弾 cycle N = buffer 前方 zero 長 `N×8.0ms×R`・`R` は 1e5〜1e6・短 HIGH ~0.1–0.2 s）→ ③**DoTask が ALS 中に start するか確認（=分水嶺）** → ④ALS ON grab で `diag_ttl`（単発 edges@2.5V=1）→ `als_inject_align`（着弾 cycle）→ ⑤3 run 以上で cycle=N 一致で **gate② PASS** → ⑥`syncArmStart`/`syncDisarm` を v4（acqModeStart で DoTask 構成→start／acqAbort・acqDone で stop/abort）へ。**per-frame host UF は overflow ゆえ不可**（§3.5）。
+```
 
-- **Tier0（実機・sync 正本）**: galvo ✓ / ALS ✓（single + multi-line/3-line）/ resonant＝据え置き。
-- **ALS 4-line**: in vivo は 4-line 想定だが **機構は 3-line で検証済**（cycle-based・line 数非依存）。4 本目取得は ROI GUI Add バグ次第だが**できる見込み＝blocker 扱いしない**（GUI 再現時のみ programmatic builder で回避、保険として用意済・未実行）。
+---
 
-### 2.1 本番前ゲート（最優先・これが通れば実験移行を検討）
+## ③ §3.5 injector — 「2026-06-12 fixed-frame 機構」サブ項目の**直後**に追記
 
-1. **1-min scan stop ＝ closed（2026-06-12）**。原因＝有限 `framesPerSlice`（ALS=cycle 数）で fault ではない。`Inf` 化で数分連続取得を確認（4-line `run-02_00001`・post-hoc QC 全 PASS）。
-2. **決まったフレームでの投与（fixed-frame injection）＝機構特定・検証残（2026-06-12）**。現行 `delaySec`（host timer）は head_pad 可変ゆえ毎回同 cycle に当たらない。**WG 'Trig Legato130'(D3.2) を frame clock で hardware-trigger**（`D0.0`→`D2.2`・WG Start Trigger=`D2.2`）し deterministic cycle で撃つ。grab 前に WG を **widget で arm 必須**（Apply のみでは無出力）。**次回手順＝クリーン取り直し**（既存 continuous run は存在証明のみ）: ①WG を finite＋Start Trigger=`D2.2`＋短パルス（≈0.2 s）＋`Start=N×cycle` に設定（「must write」は Waveform Function 再選択で buffer 再生成）→ ②同一設定で複数 run（3 run 以上）をクリーンに取得 → ③各 run で `diag_ttl`（単発）→ `als_inject_align`（着弾 cycle）→ ④全 run で cycle=N 一致で PASS → ⑤`syncArmStart` を acqModeStart-arm 版へ。**per-frame host UF は overflow ゆえ不可**（§3.5）。
+```markdown
+- **2026-06-17 WG 方式は ALS 行き止まり確定（却下）**: 上の「widget Start(arm)→grab」を自動化すべく `syncArmStart` を acqModeStart で WG を起こす版にしたところ、**WG task の起動自体が ALS で原理的に不可**と判明。フルスタック（17:33）:
+  ```
+  WaveformGenerator.startTask (379)  -> obj.updateWaveform()
+    updateWaveform (272)             -> obj.computeWaveform()
+      computeWaveform (310)          -> obj.refreshWvfmParams()
+        refreshWvfmParams (357)      -> hSI.hScan2D.scannerset.linePeriod(ss)
+          GalvoGalvo.linePeriod (489)-> assert(isa(scanfield,'ImagingField'))  ← ALS=StimulusField で FAIL
+  startTask (380)                    -> obj.hTask.start()  → "Must write buffer"（再計算が落ちて buffer 空）
+  ```
+  - **`startTask` 自体が毎回 `updateWaveform→computeWaveform→linePeriod` で再計算する**ため、pre-compute は無意味・Show Widget OFF も無効（widget 再描画でなく startTask 内部が原因）。`linePeriod` は raster(ImagingField) 前提の hardcode で ALS では必ず assert 落ち＝SI 制約。
+  - `[sync] armed` は**偽陽性**（SI の ErrorHandler が startTask 内部の linePeriod / must-write を握り潰し try/catch に非伝播。task は未起動＝AI7 flat）。
+- **2026-06-17 採用＝v4：自前 DoTask（WG バイパス）**: スタック下層の task 型 `dabs.vidrio.ddi.rdi.DoTask` を**自分で**立て、scannerset/linePeriod に一切触れずに D3.2 を駆動する。
+  - 配線は不変（`D3.2`→T→`AI7`＋Legato／`D0.0`→T→`AI6`＋`D2.2`）。**WG 'TrigLegato130-2' を Remove して D3.2 を解放**（現状 `<Reserved: TrigLegato130-2>` で予約中）。`hDAQ`=vDAQR1（`wg.hDAQ`／ResourceStore 経由）。
+  - 構成: `hT = dabs.vidrio.ddi.rdi.DoTask.createDoTask(hDAQ,'injTrig'); hT.addChannel('D3.2'); hT.cfgSampClkTiming(R_Hz,'finite',nSamp); hT.cfgDigEdgeStartTrig('/vDAQ0/D2.2','rising'); hT.writeOutputBuffer(pulseVec); hT.start();`
+  - 着弾 cycle N = buffer 前方 zero 長 `N × cycle_period(8.0 ms) × R`。`R` は控えめ（1e5〜1e6）でサイズ現実化。短 HIGH（~0.1–0.2 s）。
+  - **分水嶺＝DoTask が ALS 中に start できるか**（linePeriod 非依存ゆえ通る見込み・未確認）。disarm（syncDisarm v4）= `hT.stop()/abort()`＋必要なら `tristateOutputs`／default low。task ハンドルは persistent/appdata 保持。
+- **cycle rate 確定（2026-06-17）**: 4-line config で frame clock `D0.0→AI6` = **125.0 Hz＝8.0 ms/cycle**（clean train・max ~5V）。着弾位置計算に使用。
+```
 
-### 2.2 並行トラック（上記と並走）
+また、§3.5 の冒頭付近の `syncArmStart`/`syncDisarm` の版表記を更新（任意）:
+```markdown
+- UF: `acqModeStart`→`syncArmStart`（**v4＝自前 DoTask 構成→start**・v3 までの WG 方式は却下）／`acqAbort`・`acqDone`→`syncDisarm`（**v4＝DoTask stop/abort**）。**`frameAcquired` 空**。
+```
 
-- **behavior 記録・解析**: Data Recorder（同 vDAQ clock・同 HDF5）に behavior ch を拡張、解析側に取り込み。
-- **FastZ 導入**: fast focus を vDAQ clock 同期で ALS／imaging に統合（多深度・volumetric）。
-- **データ解析の一本化**: 散在ツール（datarecorder/als loader・compare_als_ref・make_trigger_sync・als_inject_align・diag_ttl・sweep_quality）を raw→sync→per-line→QC の単一パイプラインへ統合。契約＝`trigger_sync.schema.json`。
-- **injection／behavior GUI 作成**（上記の先）: `syncControlPanel.m` を起点に operator UX を集約。
+---
 
-## 3. behavior 入力経路（Data Recorder）
+## ④ §4「既知の注意」に新規項目を追記（既存「WG arming」項目の**直後**を推奨）
 
-- Data Recorder を device 追加済。HDF5 出力。**run-config**: Auto Start ON（Grab 同期＝共通 acq-start）／Use Trigger OFF／Sample Rate 5000／Duration Inf。
-- **HDF5 レイアウト（確定）**: root group `/` attr `samplerate`（全 ch 共通）／dataset 名 = Recorded Name／float32・MaxSize Inf・ChunkSize／attr `units`/`conversionMultiplier`／**time vector 無し → t = index / samplerate**。
-- galvo・ALS とも 4ch 取り込み＋保存を実機確認。**behavior ch 拡張は §2.2 トラックで具体化**。
+```markdown
+- **WG↔ALS 非互換＝WG 方式は却下（2026-06-17・最重要）**: ScanImage の generic WaveformGenerator は **ALS scan mode では arm（startTask）できない**。`startTask` が毎回 `updateWaveform→computeWaveform→refreshWvfmParams→scannerset.linePeriod` で波形を再計算し、`GalvoGalvo.linePeriod`（行 489）の `assert(isa(scanfield,'ImagingField'))` が ALS の `StimulusField` で落ちるため。**pre-compute / Show Widget OFF とも無効**（startTask 内部の再計算が原因）。SI 制約であり当方ロジックの問題ではない。injector は **WG をバイパスして自前 `dabs.vidrio.ddi.rdi.DoTask` を D3.2 に立てる v4 へ移行**（§3.5）。なお §4 旧「WG arming（widget Start が必要）」項目は v4 では DoTask の `start()` がその役割を担う（widget Start 不要）。
+```
 
-## 3.5 injector（t0 機構＋fixed-frame 化）
+---
 
-- 配線: `D3.2`(WG 'Trig Legato130' 出力) → T 分岐 → `AI7` = Data Recorder で TTL 記録（**t0 正本**）／`D2.1`(Aux・resonant 任意／scanner Aux trigger 1 に loopback・無害)／Legato 本体。frame clock を `D0.0` 出力 → T 分岐 → `AI6`（記録ループバック）＋**`D2.2`（NEW・WG の Start Trigger 入力）**。
-- UF: `acqModeStart`→`syncArmStart` ／ `acqAbort`・`acqDone`→`syncDisarm`。**`frameAcquired` 空**（overflow 回避の要）。
-- t0 = Data Recorder TTL edge を galvo・ALS とも実機確認。scan モード非依存。
-- **決定: recorder-start ≠ frame/cycle-0**。head_pad 非ゼロ（galvo 1.975 s／ALS 2.2–3.5 s・可変）。注入は galvo/resonant=`frame_clock` アンカー／ALS=`als_datafile_timing`（branch A clock）。
-- **〜2026-06-09 の現行（fallback）**: `syncArmStart` が host timer（`delaySec`）＋ `hWG.writeLineToVal` で発火。「いずれかの cycle に確実に乗る」は保証するが **cycle index は run ごとに変わる**（head_pad 可変ゆえ・例 #655/#487）＝**deterministic でない**。
-- **2026-06-12 fixed-frame 機構（採用方針・検証残）**: WG を**単発パルス波形＋frame clock trigger** で駆動し、host timer を排す。
-  - `D0.0`(frame clock out) は vDAQgalvo 所有で WG が trigger に予約できない（registration error）→ **物理 T 分岐で `D2.2`（D2=Inputs Only・WG-ownable）へ**渡し、WG Start Trigger=`/vDAQ0/D2.2`(rising)。
-  - **WG task は grab 前に widget で Start(arm) が必要**（Resource Config の Apply だけでは task 未起動＝D3.2 無出力。実機で `run-06_00005`/`00007` が widget Start→grab で clean 単発記録）。
-  - **continuous は止めるまで永続 on**（grab 後も on）＝one-shot 不適 → **finite モードへ**。finite の「must write buffer」は config 変更で buffer が空のまま start した為（Waveform Function 再選択で buffer 再生成 → Start で回避）。
-  - 位置決め: `Start = N × cycle_period`（cycle 0 から遅延）・短 Duty で ~0.2 s パルス。
-  - 検証（次回・クリーン取り直し）: 既存 continuous run は存在証明のみ。finite 単発の正 config で取り直した**複数 run で `als_inject_align` の着弾 cycle が一致**すれば deterministic 成立。
-  - 自動化: `syncArmStart` を **acqModeStart で WG を arm/start** する版へ（widget 手動 Start を不要に）。**per-frame host UF は不可**。
-- 物理到達遅延は別途キャリブの定数オフセット（`physical_delay_offset_s`・t0 に折り込まない）。
+## ⑤ §5「解析側への申し送り」に 1 行（任意）
 
-## 4. 既知の注意
+```markdown
+- **behavior ch 確認（2026-06-17）**: HDF5 signals に `AI4=treadmill_dir` / `AI5=treadmill_speed`（`vdaq_io_map.yaml` の旧記載 velocity/lick は誤りにつき要修正）。R2（behavior 記録）は Gate② run に相乗り可。
+```
 
-- **1-min scan stop ＝ closed（2026-06-12）**: 原因は fault ではなく **有限 `hSI.hStackManager.framesPerSlice`**（ALS では cycle 数。総 grab frame = `framesPerSlice × numSlices × numVolumes`。166.67 Hz×60 s≈10000 cyc が「10000/10000 edges」運用と符合した通り、停止＝programmed 完走）。実機で `framesPerSlice=60000` 等の有限値を確認 → `Inf` 化で数分連続取得を確認（4-line `run-02_00001`）。**運用**: 取得長 = `cycle_rate × 時間`（trajectory で cycle_rate が変わる）。raster へ切替時は再設定。
-- **WG arming（fixed-frame injection の要・2026-06-12）**: WG 'Trig Legato130' は **grab 前に widget で Start(arm) しないと出力しない**（Resource Config の Apply だけでは task 未起動＝D3.2 flat）。`syncArmStart` の acqModeStart-arm 化が済むまでは手動 Start が必要。trigger は `D2.2`（D0.0 frame clock の T 分岐）。continuous は永続 on のため **finite 単発**で使う。
-- **WG widget 描画バグ（cosmetic・2026-06-12）**: WG widget 表示時に `Error in SceneTree: Could not find node in replaceChild` が連続警告。**出力・記録には無関係**（GUI レンダリングノイズ）。Show Widget OFF で静音。ALS ROI GUI バグ／Optimize Waveform バグと同系の GUI 不安定。
-- **33 Hz overflow（既出）**: 同期 UF は acqModeStart 1 回で per-frame 負荷ゼロ → display/保存側が原因と判断。1-min stop（＝有限 framesPerSlice・解決済）とは別問題。frame rate 上限（~33–50 Hz）は Track-M の dt≤MTT/8 では line-scan で回避。
-- **ALS ROI GUI Add バグ（4-line 取得時）**: `ArbitraryLineScanRoiGui>addRoi() (行 77)` → `most.gui.style(uibutton(... 'Add ROI' ...))`。3-line では未発生。回避: SI 再起動／保存 ROI ロード／2-line 複製／programmatic builder（用意済）。再現なら MBF 報告（Optimize Waveform MBF 25850 と束ねる）。
-- **掃引品質チェック手順（確立・2026-06-09）**: `sweep_quality.py` で `.scnnr.dat` の per-cycle pp。5th percentile が線サイズ相当（noise floor ~0.1 でない）＝全 cycle 掃引で PASS。startup だけ大きく以降小なら park 病（旧 run-01_00002）。
-- **ファイル命名（既出）**: 空 0 KB `_00002` は `hScan2D.logFramesPerFile=Inf` で解消（**per-scanner**・raster へ切替時は要再設定）。`_00001` カウンタは SI 仕様で消せない＝stem 扱い。raster の `_00001_00001.tif` は SI 標準 TIFF 命名。
-- **Optimize Waveform 不可（MBF 25850）**: 運用は **Reset Waveform → Calibrate + Test**。
-- **ScanImage GUI Table バグ（cosmetic・既出）**: DataRecorderPage 表示ハイライトのみ。記録は正常。
+---
 
-## 5. 解析側への申し送り
+## ⑥ 改訂履歴に 1 行追加（表の先頭）
 
-> loader は依存軽量（numpy+h5py）で取得 repo `src/python` に single source、解析が一方向 import。schema validation は jsonschema（ivwib）。
-
-- **P1 完了（既出）**: `datarecorder_loader.py` で galvo go 数値確定。
-- **P2 完了（single + 2-line exact・既出）**: `compare_als_ref.py` で `als_loader ↔ readLineScanDataFiles` が `max|Δ|=0`。**Track-W B loader read は multi-line まで closed**。`readLineScanDataFiles` は cycle 丸ごとを返し per-ROI に割らない＝per-line orientation は下流（kymograph）。
-- **③ harness `als_inject_align.py`（既出）**: branch A/B、residual 算出、`als_datafile_timing` emit。
-- **`diag_ttl.py`（既出）**: TTL ch 特徴づけ（injector が AI7 に載っているかの即時切り分け）。
-- **`sweep_quality.py`（新規・2026-06-09）**: `.scnnr.dat` の per-cycle 2D pp で掃引品質（park 病検出）。`src/python`・`als_loader` 一方向 import・numpy（plot は matplotlib 任意）。run-01_00005（3-line）で **PASS**。NumPy 2.x 対応（`np.ptp`）。
-- **解析一本化（§2.2）**: 上記を単一パイプライン（raw→sync→per-line→QC）へ。詳細は解析側 handoff。
-- 解析側ログ詳細: `handoff_summary_20260609.md`。
-
-## 改訂履歴
-
-| 日付 | 変更 |
-|---|---|
-| 2026-06-12 | **本番前ゲート①（1-min scan stop）closed＋②（fixed-frame injection）機構特定（検証残）**（実機）。①: 原因＝有限 `hSI.hStackManager.framesPerSlice`（ALS=cycle 数。総 grab frame=framesPerSlice×numSlices×numVolumes・旧「10000/10000 edges」も 166.67Hz×60s の programmed 完走で fault ではない）→ 実 4-line config で数分連続完走＋`Inf` 持続を確認＝**closed**。post-hoc QC `run-02_00001`（4-line/400s）: diag_ttl ✓／als_inject_align ✓（49999/50000・residual 2.2426s・inject cycle#487）／sweep_quality ✓ PASS（50000cyc・pp~9.5 一定）。②: ScanImage WG 'Trig Legato130'(D3.2) を **frame clock で hardware-trigger** する機構を特定（host timer を排す）。`D0.0`(frame clock out・vDAQgalvo 所有＝WG 予約不可) を**物理 T 分岐で `D2.2` へ** → WG Start Trigger=`/vDAQ0/D2.2`(rising)。**鍵＝WG task は grab 前に widget で Start(arm) が必要**（Apply のみでは無出力）。widget Start→grab で AI7 に clean 単発を記録（`run-06_00005`/`00007`・edges@2.5V=1）。continuous は永続 on で one-shot 不適 → finite 化が必要。**検証残（次回）**: als_inject_align で複数 run の着弾 cycle 一致 → finite 単発化 → 短パルス → `Start=N×cycle` → 複数 run 一致で gate② PASS → `syncArmStart` を acqModeStart-arm 版へ。配線 `vdaq_io_map.yaml` に D0.0→D2.2 追加。WG widget の SceneTree replaceChild storm は GUI ノイズ（出力に無関係）。 |
-| 2026-06-09 | **方式A ALS go を multi-line（3-line）へ拡張**（run-01_00005）。cycle 6.0ms/166.67Hz・5000cyc×3line=30s。①overflow無 ②injector 単発5V 208.8ms clean・競合無 ③branch A clock [OK] 5000/5000・residual 2.1974s。injector cycle#655 着弾（ROI5 pause＝無害）。pause-before-each-line で line skip 無し。**掃引品質 PASS**（新ツール `sweep_quality.py`: per-cycle pp median 4.92・5th 4.904・全cyc安定＝park病なし）。次フェーズ戦略反映: 最優先＝①1-min stop 原因探索＋改善 ②決まったフレーム投与（clock/frame-trigger 化）→通れば実験移行。並行＝behavior 記録解析・FastZ 導入・解析一本化・injection/behavior GUI。4-line はできる見込みで skip、より速い ALS は次回最適化案。 |
-| 2026-06-08 | **方式A ALS go（single-line）**。branch A clock 成立（配線変更ゼロ）。residual 3.1–3.5s 可変＝毎 grab 測定。injector AI7 path 修正（単発5V）・`delaySec>head_pad`（=6）で cycle 着弾。新ツール `als_inject_align.py`・`diag_ttl.py`。P2 2-line exact＝Track-W B loader closed。resonant 据え置き→finalize 2 mode 化。`logFramesPerFile=Inf`（per-scanner）。4-line は ROI GUI バグで未完。 |
-| 2026-06-06 | 解析側 P2（single-line exact）・trigger_sync emitter（galvo `.h5` で schema VALID）。jsonschema を ivwib へ。 |
-| 2026-06-05 (b) | P1: galvo go 数値確定。決定: recorder-start≠frame-0／frame_clock anchor／median rate。trigger_sync schema draft 化。 |
-| 2026-06-05 (a) | 方式A e2e **galvo go**。Data Recorder 配線・run-config・UF 登録・HDF5 レイアウト確定・受け入れ ①②③。 |
+```markdown
+| 2026-06-17 | **ゲート②: WG 方式 ALS 行き止まり確定＋DoTask ピボット**（実機）。generic WaveformGenerator は ALS で arm 不可＝`startTask`→`updateWaveform`→`computeWaveform`→`scannerset.linePeriod`→`GalvoGalvo.linePeriod`(489) の `assert(isa(scanfield,'ImagingField'))` が ALS `StimulusField` で落ちる（フルスタック 17:33）。`startTask` 自体が毎回再計算するため pre-compute / Show Widget OFF とも無効。`[sync] armed` は偽陽性（SI ErrorHandler が内部エラーを握り潰し task 未起動・AI7 flat）。**WG 方式却下**。白＝frame clock `D0.0→AI6` 125.0Hz/8.0ms（cycle rate 確定）・D2.2 分岐健全（AI9 で 125Hz/5V）・WG 出力経路正常（Test B 単発 edges=1・max5.09V）・behavior `AI4=treadmill_dir`/`AI5=treadmill_speed`。**次手 v4＝WG Remove で D3.2 解放→自前 `dabs.vidrio.ddi.rdi.DoTask`（createDoTask/addChannel/cfgSampClkTiming finite/cfgDigEdgeStartTrig D2.2 rising/writeOutputBuffer/start）を立て linePeriod 非依存で撃つ**（着弾 cycle=buffer 前方 zero `N×8ms×R`）。検証＝DoTask が ALS 中 start するか→diag_ttl(単発)→als_inject_align(cycle)→3run 一致で PASS→syncArmStart/Disarm を v4 化。schema v0.2.0 finalize（9/9 PASS・$id host 揃え TODO）。**SI 起動中 `clear functions`/`clear all` 厳禁**（MDF/resource unload）。 |
+```
