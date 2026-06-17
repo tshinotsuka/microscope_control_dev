@@ -1,23 +1,23 @@
-function syncDisarm(~, ~)
-% ScanImage 'acqAbort' / 'acqDone' user function.
-% Cancel all pending sync timers and force every configured WG line LOW (safety),
-% so an aborted acquisition can never leave a trigger line stuck high.
-    delete(timerfindall('Tag','syncTrig'));
-    names = {};
+function syncDisarm(src, evt, varargin)
+% syncDisarm (v2) — fixed-frame injection disarm
+% ------------------------------------------------------------------------
+% acqAbort + acqDone User Function. Stops the injector WG task and drives
+% the output line back to its default (low). Mirrors the widget Stop.
+%
+% Use this if your existing syncDisarm does not actually stopTask the WG.
+% If your current disarm already prints "[sync] disarmed; configured lines
+% set low" AND stops the WG task, you can keep it.
+% ------------------------------------------------------------------------
     try
-        if evalin('base','exist(''syncTriggers'',''var'')')
-            cfg = evalin('base','syncTriggers');
-            names = unique({cfg.wg});
-        end
-    catch
+        wgs = dabs.resources.ResourceStore().filterByClass('dabs.generic.WaveformGenerator');
+        assert(~isempty(wgs), '[sync] no WaveformGenerator resource found');
+        wg = wgs{1};
+
+        try, wg.stopTask(); catch, end
+        try, wg.writeLineToDefaultVal(); catch, end   % drive D3.2 low
+
+        fprintf('[sync] disarmed WG ''%s''; line low\n', wg.name);
+    catch ME
+        fprintf(2, '[sync] WG DISARM FAILED: %s\n', ME.message);
     end
-    for i = 1:numel(names)
-        try
-            hWG = dabs.resources.ResourceStore().filterByName(names{i});
-            if iscell(hWG), hWG = hWG{1}; end
-            if ~isempty(hWG), hWG.writeLineToVal(0); end
-        catch
-        end
-    end
-    disp('[sync] disarmed; configured lines set low')
 end
