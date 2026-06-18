@@ -2,20 +2,20 @@
 #
 # 方式A: behavior/aux は vDAQ 低速 AI を ScanImage "Data Recorder" で HDF5 記録（同一 vDAQ クロック）。
 #   injector イベントの t0 正本 = Data Recorder に録った injector TTL エッジ（AI7・全 scan モード共通・2026-06-04 決定）。
-#   injector は acqModeStart 単発 UF (syncArmStart) で WG 'Trig Legato130'(D3.2) を発火 → AI7 で Data Recorder 記録。
+#   injector は acqModeStart 単発 UF (syncArmStart v4) で D3.2 上の自前 DoTask を発火 → AI7 で Data Recorder 記録。
 #   Aux Trigger(D2.1 -> TIFF) は resonant 時の任意クロスチェックに格下げ（galvo は TIFF aux に依存しない）。
-#   frame clock を D0.0 出力 -> T 分岐 -> AI6 ループバック(Data Recorder 記録) ＋ D2.2(WG Start Trigger 入力)。
+#   frame clock を D0.0 出力 -> T 分岐 -> AI6 ループバック(Data Recorder 記録) ＋ D2.2(DoTask Start Trigger 入力)。
 #     ※ ALS でも D0.0 は cycle ごとに出る(branch A clock)。旧「ALS は frame 無」は誤りで修正済(2026-06-08)。
 #   recorder-start ≠ frame-0（Auto-Start head pad ~2 s 実測 2026-06-05）のため、注入は frame_clock にアンカーする。
-#   出力は Waveform Generator(FPGA タイミング)で駆動。User Function は acqModeStart で arm/start のみ（per-frame 禁止）。
+#   出力は自前 DoTask(dabs.vidrio.ddi.rdi.DoTask・FPGA タイミング)で駆動。User Function は acqModeStart で構成/start のみ（per-frame 禁止）。
 #
-#   [fixed-frame injection 機構・DoTask v4・PASS 2026-06-18] host timer(delaySec)は head_pad 可変で deterministic でない。
-#     WG 案は廃止(WG は ALS 下で startTask->linePeriod が StimulusField で assert し arm 不安定・[sync] armed が false positive 化)。
-#     → injector を D3.2 上の raw DoTask(dabs.vidrio.ddi.rdi.DoTask・finite)で駆動。linePeriod を呼ばず ALS 下で start 可。
-#       start trigger = /vDAQ0/D2.2(rising) = D0.0 frame clock の T 分岐(D0.0 は vDAQgalvo 所有で外部 task が予約不可)。
-#       syncArmStart が acqModeStart で auto-arm(createDoTask/addChannel/cfgSampClkTiming finite/cfgDigEdgeStartTrig/
-#       writeOutputBuffer/start)・widget 手動 Start 不要。出力 buffer の N×cycle 位置に単発パルス(N=目標cycle-1・+1 オフセット)。
-#       決定論 PASS: run-01_00002/00003/00004 で head_pad 1.15-2.23s ばらつきでも着弾 cycle 全て #501。150ms 単発 5.08V。
+#   [fixed-frame injection 機構・2026-06-17・DoTask ピボット・検証残] host timer(delaySec)は head_pad 可変で deterministic でない。
+#     当初狙った WG hardware-trigger は ALS で行き止まり確定(2026-06-17): generic WaveformGenerator は ALS で arm 不可
+#       (startTask→computeWaveform→linePeriod が ALS の StimulusField で assert 落ち)。WG 方式は却下・再試行しない。
+#     → v4: WG 'TrigLegato130-2' を Remove して D3.2 を解放し、自前 DoTask を D3.2 に立てて D2.2(rising) で hardware-trigger。
+#       D0.0 を T 分岐で D2.2 へ渡す(D0.0 は vDAQgalvo 所有で trigger 予約不可・D2 は Inputs Only で ownable)、Start Trigger=/vDAQ0/D2.2(rising)。
+#     構成: createDoTask→addChannel('D3.2')→cfgSampClkTiming(R_Hz,'finite',nSamp)→cfgDigEdgeStartTrig('/vDAQ0/D2.2','rising')→writeOutputBuffer→start。
+#       着弾 cycle N = buffer 前方 zero 長 N×cycle_period(8.0ms)×R。検証=als_inject_align で複数 run の着弾 cycle 一致。
 #
 # 確定根拠: 公式 ScanImage vDAQ Wiring Diagram(IMG_9982) ＋ 実機 breakout 写真(IMG_9981)
 #   ＋ ScanImage Resource Config ＋ 2026-06-05 galvo e2e bench（injector/frame_clock を実配線・実記録で confirmed）。
@@ -70,44 +70,44 @@ low_speed_ai:
   recorder: "ScanImage Data Recorder"
   sample_rate_hz: 5000            # 2026-06-05 実機採用。実下限 3052 Hz(doc の 500 Hz でなく FPGA 分周由来)。上限 500 kHz。
   signals:
-    - {port: "AI4", name: "velocity",   range_v: [-10, 10], role: "behavior", status: proposed,
-       note: "treadmill。quadrature encoder の場合は AI でなく DI 2 本+offline decode か HARP に寄せる(Phase 2)"}
-    - {port: "AI5", name: "lick",        range_v: [0, 5],   role: "behavior", status: proposed}
+    - {port: "AI4", name: "treadmill_dir",   range_v: [-10, 10], role: "behavior", status: confirmed,
+       note: "treadmill 方向。HDF5 signals で確認(2026-06-17)。旧 velocity 表記は誤り。range_v は実測で要確認。"}
+    - {port: "AI5", name: "treadmill_speed", range_v: [-10, 10], role: "behavior", status: confirmed,
+       note: "treadmill 速度。HDF5 signals で確認(2026-06-17)。旧 lick 表記は誤り。range_v は実測で要確認。"}
     - {port: "AI8", name: "reward_mon",  range_v: [0, 5],   role: "behavior", status: proposed,
        note: "報酬コマンドのモニタ(任意)。旧 AI6 から移動(AI6 は frame_clock に確定したため)"}
     # AI9-AI11 空き(behavior 追加用)
 
-# ---- injector trigger chain (t0 mechanism finalized 2026-06-04; galvo confirmed 2026-06-05; DoTask v4 PASS 2026-06-18) ----
-injector_trigger:   { port: D3.2, dir: out, role: "injector TTL out = raw DoTask (finite・acqModeStart auto-arm by syncArmStart)", status: confirmed,
-                      driver: "dabs.vidrio.ddi.rdi.DoTask (Digital out, finite)",
+# ---- injector trigger chain (t0 mechanism finalized 2026-06-04; galvo confirmed 2026-06-05; WG frame-trigger dead-end + DoTask pivot 2026-06-17) ----
+injector_trigger:   { port: D3.2, dir: out, role: "self-built DoTask TTL out (acqModeStart 単発 syncArmStart v4)", status: confirmed,
                       start_trigger: "/vDAQ0/D2.2 (rising) = frame clock loopback",
-                      note: "2026-06-18: WG 案は廃止(WG は ALS 下で startTask->linePeriod assert により arm 不安定)。raw DoTask は linePeriod を呼ばず ALS 下で start 可。決定論 PASS: run-01_00002/00003/00004 で head_pad 1.15-2.23s ばらつきでも着弾 cycle 全て #501。N=目標cycle-1(+1 オフセット)。実測 R=100kHz/nSamp=420000/~4.000s 遅延/150ms パルス。" }
-injector_monitor:   { port: AI7,  dir: in,  role: "injector TTL -> Data Recorder 'Legato130_TTL' (t0 正本, 全モード共通)", status: confirmed }  # galvo/ALS 実機記録確認(run-01_00002..04 で 150ms 単発 5.08V)
+                      note: "2026-06-17 DoTask ピボット: WG 方式は ALS 行き止まり確定(却下)→ WG 'TrigLegato130-2' を Remove して D3.2 を解放し、自前 dabs.vidrio.ddi.rdi.DoTask を D3.2 に立てて D2.2(rising) で hardware-trigger。finite 単発・着弾 cycle N = buffer 前方 zero 長 N×cycle_period(8.0ms)×R。" }
+injector_monitor:   { port: AI7,  dir: in,  role: "injector TTL -> Data Recorder 'Legato130_TTL' (t0 正本, 全モード共通)", status: confirmed }  # galvo/ALS 実機記録確認(run-06_00005/00007 clean 単発)
 injector_aux:       { port: D2.1, dir: in,  role: "Aux Trigger 1 (resonant 時の任意クロスチェックのみ・scanner Aux trigger 1 に loopback・無害)", status: confirmed }
 
-# ---- frame clock chain (alignment cross-check; galvo confirmed 2026-06-05; D2.2 split 2026-06-12) ----
+# ---- frame clock chain (alignment cross-check; galvo confirmed 2026-06-05; D2.2 split 2026-06-12; trigger consumer = DoTask 2026-06-17) ----
 # recorder-start≠frame-0 のため、frame_clock を録って注入を frame アンカーする。
-# D0.0(出力) を T 分岐: AI6(記録ループバック) ＋ D2.2(WG Start Trigger 入力)。
+# D0.0(出力) を T 分岐: AI6(記録ループバック) ＋ D2.2(DoTask Start Trigger 入力)。
 frame_clock_out:     { port: D0.0, dir: out, role: "imaging frame clock out (imaging system config > Triggers タブで D0.0 に割当・vDAQgalvo 所有)", status: confirmed }  # 旧 proposed D3.3 -> D0.0 に変更・使用
 frame_clock_monitor: { port: AI6,  dir: in,  role: "frame clock -> Data Recorder 'frame_clock' (D0.0 ループバック)", status: confirmed,
                       note: "ALS でも cycle ごとに出る(branch A clock・各 cycle=内部 frame)。旧『ALS は frame 無』は誤りで修正済(2026-06-08)。" }
-wg_trigger_in:       { port: D2.2, dir: in,  role: "injector DoTask の Start Trigger 入力 = D0.0 frame clock の T 分岐(2026-06-12 配線・2026-06-18 DoTask 化)", status: confirmed,
-                      note: "D0.0 は vDAQgalvo 所有で外部 task が trigger に予約不可 → 物理 T 分岐で D2.2(D2=Inputs Only)へ。出力→入力なので T 分岐安全。DoTask の cfgDigEdgeStartTrig('/vDAQ0/D2.2','rising')。" }
+inj_trigger_in:      { port: D2.2, dir: in,  role: "injector DoTask の Start Trigger 入力 = D0.0 frame clock の T 分岐(2026-06-12)", status: confirmed,
+                      note: "D0.0 は vDAQgalvo 所有で trigger に予約不可 → 物理 T 分岐で D2.2(D2=Inputs Only・ownable)へ。出力→入力なので T 分岐安全。旧 WG の Start Trigger だった配線をそのまま v4 DoTask が使う。" }
 
-# ---- frame-triggered 出力 = Route A: Waveform Generator ----
+# ---- frame-triggered 出力 = Route A: self-built DoTask (dabs.vidrio.ddi.rdi.DoTask) ----
 digital_out:
   - line: "D3.2"
     name: "injector_trigger"
-    device: "Waveform Generator 'Trig Legato130'"
+    device: "self-built DoTask 'injTrig' (dabs.vidrio.ddi.rdi.DoTask)"
     role: "frame_triggered_out"
     status: confirmed
-    driver: "raw DoTask (dabs.vidrio.ddi.rdi.DoTask・Digital out・finite)。2026-06-18: WG 廃止し DoTask v4 で deterministic fixed-cycle 化(PASS)。trig=/vDAQ0/D2.2(rising)。syncArmStart が acqModeStart で auto-arm・per-frame callback なし"
-    note: "D3=Outputs Only。injector(KD Legato 130)へ＋ D2.1 aux に loopback(resonant cross-check)。D2.0 は入力専用で不可だった。DoTask: createDoTask/addChannel/cfgSampClkTiming(finite)/cfgDigEdgeStartTrig/writeOutputBuffer/start。"
+    driver: "DoTask finite 単発(FPGA timing)。2026-06-17 DoTask ピボット(WG 方式は ALS 行き止まり・却下): WG を Remove して D3.2 を解放→自前 DoTask を立て D2.2(rising) で hardware-trigger。syncArmStart v4 は acqModeStart で構成/start のみ・per-frame callback なし"
+    note: "D3=Outputs Only。injector(KD Legato 130)へ＋ D2.1 aux に loopback(resonant cross-check)。D2.0 は入力専用で不可だった。Start Trigger=/vDAQ0/D2.2(rising)。"
   - line: "D0.0"
     name: "frame_clock_out"
     role: "sync_master"
     status: confirmed
-    note: "frame clock を D0.0 に出力(imaging system config > Triggers タブ・vDAQgalvo 所有)。T 分岐: AI6 ループバック(Data Recorder 記録・整列) ＋ D2.2(WG Start Trigger 入力・2026-06-12)。Phase2 で pupil camera/ephys へも同線。旧 D3.3 提案は解放。"
+    note: "frame clock を D0.0 に出力(imaging system config > Triggers タブ・vDAQgalvo 所有)。T 分岐: AI6 ループバック(Data Recorder 記録・整列) ＋ D2.2(DoTask Start Trigger 入力・2026-06-12 配線/2026-06-17 consumer=DoTask)。Phase2 で pupil camera/ephys へも同線。旧 D3.3 提案は解放。"
   # 将来 opto 用に D3.3-D3.7 等(出力)を確保
 
 # ---- Auxiliary Trigger 入力(イベントを TIFF に timestamp) ----
@@ -124,7 +124,7 @@ free_ports:
   analog_out: "AO5-AO11"
   analog_in:  "AI9-AI11 (＋未使用なら AI2/AI3)"   # AI6=frame_clock, AI7=injector, AI8=reward_mon に割当済
   digital_out_capable: "D0.1-D0.7 / D1.x(双方向) / D3.3-D3.7(出力専用・D3.2=injector 使用中)"
-  digital_in_capable:  "D0.x(D0.0 除く) / D1.x(双方向) / D2.3-D2.7(入力専用・D2.0/D2.1/D2.2 使用中)"   # D2.2=WG Start Trigger(frame clock 分岐・2026-06-12)
+  digital_in_capable:  "D0.x(D0.0 除く) / D1.x(双方向) / D2.3-D2.7(入力専用・D2.0/D2.1/D2.2 使用中)"   # D2.2=DoTask Start Trigger(frame clock 分岐・2026-06-12 配線/2026-06-17 consumer=DoTask)
 
 # ---- fallback(方式B・別 NI ボード) ----
 fallback_method_b:
@@ -133,12 +133,12 @@ fallback_method_b:
   note: "vDAQ を別 session で握ると ScanImage と排他衝突(過去の DO 不動の原因)。vDAQ 上では使わない"
 
 provenance:
-  status: "reserved/向き制約は公式図 confirmed。injector(D3.2/AI7)・frame_clock(D0.0/AI6) は 2026-06-05 galvo bench で confirmed。behavior は proposed(実配線で確定)。"
+  status: "reserved/向き制約は公式図 confirmed。injector(D3.2/AI7)・frame_clock(D0.0/AI6) は 2026-06-05 galvo bench で confirmed。behavior(AI4=treadmill_dir/AI5=treadmill_speed) は 2026-06-17 HDF5 で confirmed。injector driver は WG→自前 DoTask(v4)にピボット(2026-06-17・検証残)。"
   refs:
     - "IMG_9982(公式 ScanImage vDAQ Wiring Diagram)"
     - "IMG_9981(breakout 実機写真)"
     - "2026-06-05 galvo e2e bench(injector AI7 t0・frame_clock D0.0->AI6 を実記録で確認; method_a_e2e_gonogo_sop.md)"
-    - "2026-06-12 fixed-frame bench(WG 'Trig Legato130' を frame clock で trigger・D0.0->D2.2 分岐・widget arm 必須を確認; run-06_00005/00007 で AI7 clean 単発記録・検証残)"
-    - "2026-06-18 fixed-frame PASS(WG 廃止し D3.2 raw DoTask v4・trig D2.2・syncArmStart auto-arm; run-01_00002/00003/00004 で head_pad 1.15-2.23s ばらつきでも着弾 cycle 全て #501=決定論成立・150ms 単発 5.08V)"
+    - "2026-06-12 fixed-frame bench(WG 'Trig Legato130' を frame clock で trigger・D0.0->D2.2 分岐を確認; run-06_00005/00007 で AI7 clean 単発記録)。※ widget arm 必須としていたが後に WG arm 自体が ALS で不可と判明(下記)。"
+    - "2026-06-17 実機: WG 方式 ALS 行き止まり確定(startTask→computeWaveform→linePeriod が StimulusField で assert 落ち・WG 却下)＋ DoTask ピボット。白=frame clock D0.0->AI6 125Hz/8ms(cycle rate 確定)・D2.2 分岐健全(AI9 で 125Hz/5V)・D3.2->AI7 出力経路正常(Test B 単発)・behavior AI4/AI5。次手=自前 DoTask(D2.2 trigger)。"
     - "docs.scanimage.org: Data Recorder / Auxiliary Trigger / Waveform Generator / Stage Scanning(frame clock 出力)"
     - "docs/status.md §3/§3.5(方式A) / sync_architecture.md §2-§3 / trigger_sync.schema.json"
