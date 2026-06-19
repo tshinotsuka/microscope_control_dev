@@ -161,14 +161,28 @@ def qc_load(h5_path, als_stem=None, ttl_name="Legato130_TTL", clock_name="frame_
     if als_stem is not None:
         try:
             import als_loader as AL
-            ls = AL.load(als_stem)
-            pmt_n = int(ls.pmt.shape[0]) if ls.pmt is not None else None
-            scn_n = int(ls.scnnr.shape[0]) if ls.scnnr is not None else None
+            ls = AL.load(als_stem, read_data=False)         # meta/info only (skip 160 MB pmt)
+            info, stem = ls.info, ls.stem
             if out["timing"] is not None:
                 out["timing"]["n_commanded"] = _commanded_cycles(ls.si)
 
-            if ls.scnnr is not None:
-                pp = _per_cycle_pp(ls.scnnr)
+            # pmt cycle count WITHOUT reading the big .pmt.dat (from file size)
+            pmt_n = None
+            pmt_path = stem + ".pmt.dat"
+            per_cyc_pmt = (info.pmt_samples_per_cycle
+                           * max(len(info.pmt_channels), 1) * AL.PMT_DTYPE.itemsize)
+            if os.path.exists(pmt_path) and per_cyc_pmt:
+                pmt_n = int(os.path.getsize(pmt_path) // per_cyc_pmt)
+
+            # scanner feedback (small file) for sweep QC
+            scn = None
+            scn_path = stem + ".scnnr.dat"
+            if info.record_feedback and os.path.exists(scn_path):
+                scn = AL.load_scnnr(scn_path, info)
+            scn_n = int(scn.shape[0]) if scn is not None else None
+
+            if scn is not None:
+                pp = _per_cycle_pp(scn)
                 pct = np.percentile(pp, [0, 5, 25, 50, 75, 95, 100])
                 p05, p50 = float(pct[1]), float(pct[3])
                 ok = (p05 > 0) and (p05 >= 0.5 * p50)

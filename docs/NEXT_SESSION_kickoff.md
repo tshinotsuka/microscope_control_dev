@@ -25,7 +25,7 @@ scope:          次セッションの頭出し。状態の正本＝status.md / r
 
 ### 並行（実機 / オフライン）
 3. **behavior 記録・解析起こし**: AI4=treadmill_dir / AI5=treadmill_speed を Data Recorder（同 vDAQ clock・同 HDF5）→ `datarecorder_loader` 取り込み → `signals.behavior` 整合 → 解析。range_v は実測で確認。
-4. **解析側 .h5 QC ビューア（GUI Layer 2 の最初）**: `diag_ttl`/`als_inject_align`/`sweep_quality` をパネル化（毎 grab の手打ちを 1 アクションに）。napari か PyQtGraph/Qt。
+4. **解析側 .h5 QC ビューア（Layer-2 最初）＝第一弾 done（§3）**: `qc_core`＋`qc_dashboard`（PyQtGraph）。残＝clock パネル可読化（125Hz 生波形→edge tick）／behavior 行分け等の polish（任意）。
 5. **ALS×raster 一枚図 / ALS 解析**: `als_loader.scanfields()` 幾何で 1Hz 参照に ROI/scan line 重畳（horizon の overlay タスク・`compare_als_ref`）＋ per-ROI トレース。
 6. **FastZ 導入 / データ解析の一本化 / injection・behavior GUI 統合**: 据え置き。
 
@@ -53,10 +53,13 @@ scope:          次セッションの頭出し。状態の正本＝status.md / r
 - 配線・cycle rate（125Hz/8.0ms）・behavior（AI4/AI5）白。schema v0.2.0 finalize（9/9 PASS）。
 - **R1（契約 emission・gate 条件2 emission 部）PASS（2026-06-19）**: `make_trigger_sync` 単一正本（0.2.0）・`als_inject_align --emit-sidecar` 委譲・3 run sidecar VALID＋inject_cycle #501（head_pad ばらつき下で不変）。旧 emit の v0.1.0 形は schema INVALID（10 errors）で捕捉。schema `schema_version` を `const` pin。**やり直さない**。
 - **cycle_period 自動取得 done（2026-06-19）**: `hRoiManager.scanFramePeriod` を単一正本 helper `alsCyclePeriodS` 経由で `syncArmStart`/`syncControlPanel` が読む。ハードコード 8ms 廃止・override drift は arm 時 warn。
+- **Layer-2 .h5 QC ダッシュボード第一弾 done（2026-06-19）**: `qc_core.py`（UI 非依存データ層）＋`qc_dashboard.py`（PyQtGraph・1 ファイル選択で diag_ttl→als_inject_align→sweep_quality を畳む・ALS/galvo 自動判定・mode-general）。run-01_00004 で contract 値（#501・head_pad 1.155・sweep PASS）再現。**新所見**: ① `.scnnr.dat` が 988 cyc＝pmt/clock(1000) より tail-clip 疑い（overlay で要確認）／② behavior ノイズ onset が head_pad に一致＝scanner pickup 疑い（無動物・scanner ON で切り分け）。
 
 ## 4. 未決 / 繰越
 
 - SI 自動 metadata の実機 SOP 検証（gate 条件2 の残り）。
+- **scnnr 988 vs pmt/clock 1000**: feedback tail-clip の欠けが先頭/末尾どちらか（ALS×raster overlay で確認）。
+- **behavior ノイズ onset≈head_pad**: scanner EMI pickup か実信号か（無動物・scanner ON で切り分け・in-vivo behavior 解釈の前提）。
 - 解析側ダッシュボード（.h5 QC → ALS×raster 一枚図 → ALS 解析）。
 - 投与を cycle 内の特定 line/位置に当てたい場合の N 小数オフセット（現状 cycle 境界 +0.0ms）。
 - clock `[CHECK]`（head warmup 取りこぼし）の `[OK]` 化（任意）。
