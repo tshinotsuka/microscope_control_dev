@@ -157,20 +157,24 @@ def qc_load(h5_path, als_stem=None, ttl_name="Legato130_TTL", clock_name="frame_
             "range_v": [round(float(v.min()), 3), round(float(v.max()), 3)],
         })
 
-    # --- ALS sweep quality (needs .scnnr.dat via als_loader) ---
+    # --- ALS sweep quality + cross-stream cycle-count check (als_loader) ---
     if als_stem is not None:
         try:
             import als_loader as AL
             ls = AL.load(als_stem)
+            pmt_n = int(ls.pmt.shape[0]) if ls.pmt is not None else None
+            scn_n = int(ls.scnnr.shape[0]) if ls.scnnr is not None else None
             if out["timing"] is not None:
                 out["timing"]["n_commanded"] = _commanded_cycles(ls.si)
+
             if ls.scnnr is not None:
                 pp = _per_cycle_pp(ls.scnnr)
                 pct = np.percentile(pp, [0, 5, 25, 50, 75, 95, 100])
                 p05, p50 = float(pct[1]), float(pct[3])
                 ok = (p05 > 0) and (p05 >= 0.5 * p50)
                 out["sweep"] = {
-                    "n_cycles": int(pp.size),
+                    "n_cycles": int(pp.size),                # scnnr cycles
+                    "n_cycles_pmt": pmt_n,
                     "pp_percentiles": [round(float(p), 4) for p in pct],
                     "median_over_5th": (round(p50 / p05, 3) if p05 > 0 else None),
                     "verdict": "PASS" if ok else "CHECK",
@@ -179,6 +183,20 @@ def qc_load(h5_path, als_stem=None, ttl_name="Legato130_TTL", clock_name="frame_
                 }
             else:
                 out["warnings"].append("ALS feedback off / .scnnr.dat absent -> no sweep QC")
+
+            # cross-check the four independent cycle counts (pmt / scnnr / clock / commanded).
+            # they SHOULD agree (±1 boundary); a wider gap means one stream is clipped
+            # (e.g. feedback DMA stops early) -> per-cycle pmt<->feedback alignment is offset.
+            counts = {"pmt": pmt_n, "scnnr": scn_n,
+                      "clock": (out["timing"]["n"] if out["timing"] else None),
+                      "commanded": (out["timing"]["n_commanded"] if out["timing"] else None)}
+            present = {k: v for k, v in counts.items() if v is not None}
+            out["cycle_counts"] = present
+            if present and (max(present.values()) - min(present.values()) > 1):
+                out["warnings"].append(
+                    "cycle-count mismatch across streams " + str(present) +
+                    " -> pmt<->feedback per-cycle alignment may be offset (likely a "
+                    "tail-clipped stream); check which end the missing cycles are on.")
         except FileNotFoundError as e:
             out["warnings"].append(f"ALS files not found for sweep QC: {e}")
         except Exception as e:                              # noqa: BLE001 (keep QC robust)
