@@ -70,7 +70,13 @@ def make_overview(ctx, out, title=None):
     have_clock = CLOCK_NAME in data["signals"]
     have_ttl = TTL_NAME in data["signals"]
 
-    plt.rcParams.update({"font.size": 11, "axes.titlesize": 11, "axes.labelsize": 10,
+    # Arial-first (figstyle_tshino-compatible fallback metrics); editable vector text.
+    # report-final figures will move to figstyle_tshino (1 panel = 1 file, mm-sized).
+    plt.rcParams.update({"font.family": "sans-serif",
+                         "font.sans-serif": ["Arial", "Liberation Sans", "Arimo",
+                                             "Helvetica", "DejaVu Sans"],
+                         "pdf.fonttype": 42, "svg.fonttype": "none",
+                         "font.size": 11, "axes.titlesize": 11, "axes.labelsize": 10,
                          "xtick.labelsize": 9, "ytick.labelsize": 9, "axes.grid": True,
                          "grid.alpha": 0.25})
     nrow = int(have_ttl) + int(have_clock) + int(bool(behavior))
