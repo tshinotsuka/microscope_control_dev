@@ -16,11 +16,12 @@ scope:          次セッションの頭出し。状態の正本＝status.md / r
 
 **本番前ゲート①②とも closed。** ①（1-min scan stop）＝有限 `framesPerSlice` が原因・`Inf` 化で解決。②（deterministic fixed-frame injection）＝WG 方式は ALS で arm 不可（`startTask→computeWaveform→linePeriod` が StimulusField で assert 落ち・却下）→ **自前 `dabs.vidrio.ddi.rdi.DoTask`（v4）で PASS（2026-06-18）**。v4 が ALS 走行中に arm 成功・3 run（N=500）で `inject_cycle=#501` 完全一致（head_pad 1.16–2.23s 変動下でも不変＝frame-clock anchored）。`syncArmStart`/`syncDisarm` を v4（DoTask 構成→start／abort）に確定、**注入 GUI v1（`syncControlPanel`）も実機動作確認**。配線・cycle rate（125Hz/8.0ms・4-line）・behavior（AI4=treadmill_dir / AI5=treadmill_speed）も白。
 
+**追補（2026-06-19）**: R1（契約 emission・gate 条件2 emission 部）＝PASS（3 run で sidecar v0.2.0 VALID・inject_cycle #501）。emitter は `make_trigger_sync` 単一正本化＋`als_inject_align` 委譲（出力 byte 一致）。schema `schema_version` を `const` pin。cycle_period は hSI 自動取得（`hRoiManager.scanFramePeriod`・`alsCyclePeriodS`）で done。**残 gate 条件2＝SI 自動 metadata の実機 SOP 検証のみ**。
+
 ## 1. 次セッションでやること（優先順）
 
-### 最優先＝gate 残務 ＋ 取りこぼし潰し
-1. **R1（契約 emission・gate 条件2）**: gate② 採用 run のどれかで `als_inject_align <h5> <stem> --emit-sidecar` → 出た trigger_sync sidecar が **schema v0.2.0 に VALID** か、解析側 `file_naming.md`/`metadata_schema.md` と突合。VALID で gate 条件2 PASS。追加 grab 不要。
-2. **cycle_period を ScanImage から自動取得**: 現状ハードコード 8.0ms。live `hSI` の ALS cycle-period プロパティを特定（DoTask と同じ introspection＝`disp`/`properties`/`methods -full`）→ `syncArmStart`/`syncControlPanel` が自動で読む。pulse width は自由パラメータゆえ手入力のまま。silent-misconfig 解消。
+### 最優先＝gate 残務（gate 条件2 の残り）
+1. **SI 自動 metadata の実機 SOP 検証（gate 条件2 の残り）**: logFileStem SOP・ALS 3 ファイル＋`scnnr`・「acq / scan_mode はファイル名でなく metadata」が契約どおりか実機で確認。R1（契約 emission）は 2026-06-19 PASS 済（§3）。これが通れば **gate 条件2 完了＝in-vivo 不可逆取得の契約ゲートが全部開く**。
 
 ### 並行（実機 / オフライン）
 3. **behavior 記録・解析起こし**: AI4=treadmill_dir / AI5=treadmill_speed を Data Recorder（同 vDAQ clock・同 HDF5）→ `datarecorder_loader` 取り込み → `signals.behavior` 整合 → 解析。range_v は実測で確認。
@@ -50,11 +51,12 @@ scope:          次セッションの頭出し。状態の正本＝status.md / r
 - **ゲート② closed（2026-06-18・v4 DoTask）**: 3 run inject_cycle=#501 一致・head_pad 変動下でも不変＝frame-clock anchored。**WG 方式は ALS で arm 不可につき却下・再試行しない**。
 - **v4 DoTask 罠（再発防止）**: ① `cfgSampClkTiming`='not done'（→`sampleRate` property）② `sampleMode` 既定 continuous（→`'finite'` 必須）③ Vidrio クラスは `.p`（→`methods -full`/`disp(hT)` で introspect）④ D3.2 は WG 予約ゆえ WG Remove 必須。
 - 配線・cycle rate（125Hz/8.0ms）・behavior（AI4/AI5）白。schema v0.2.0 finalize（9/9 PASS）。
+- **R1（契約 emission・gate 条件2 emission 部）PASS（2026-06-19）**: `make_trigger_sync` 単一正本（0.2.0）・`als_inject_align --emit-sidecar` 委譲・3 run sidecar VALID＋inject_cycle #501（head_pad ばらつき下で不変）。旧 emit の v0.1.0 形は schema INVALID（10 errors）で捕捉。schema `schema_version` を `const` pin。**やり直さない**。
+- **cycle_period 自動取得 done（2026-06-19）**: `hRoiManager.scanFramePeriod` を単一正本 helper `alsCyclePeriodS` 経由で `syncArmStart`/`syncControlPanel` が読む。ハードコード 8ms 廃止・override drift は arm 時 warn。
 
 ## 4. 未決 / 繰越
 
-- R1 sidecar VALID 確認。
-- cycle_period の hSI 自動取得（プロパティ未特定）。
+- SI 自動 metadata の実機 SOP 検証（gate 条件2 の残り）。
 - 解析側ダッシュボード（.h5 QC → ALS×raster 一枚図 → ALS 解析）。
 - 投与を cycle 内の特定 line/位置に当てたい場合の N 小数オフセット（現状 cycle 境界 +0.0ms）。
 - clock `[CHECK]`（head warmup 取りこぼし）の `[OK]` 化（任意）。
