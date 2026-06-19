@@ -36,8 +36,8 @@ Usage:
     python als_inject_align.py <recorder.h5> <als_stem-or-meta.txt>
     # name a different clock signal (if a dedicated ALS clock was wired)
     python als_inject_align.py <recorder.h5> <als_stem> --clock-name als_period_clock
-    # also emit a trigger_sync sidecar (base from make_trigger_sync) with the
-    # measured als_datafile_timing block attached:
+    # also emit a schema-valid trigger_sync sidecar (DELEGATES to make_trigger_sync,
+    # which self-computes the v0.2.0 als_datafile_timing block from the branch-A clock):
     python als_inject_align.py <recorder.h5> <als_stem> --emit-sidecar --out sync.json
 """
 from __future__ import annotations
@@ -210,7 +210,10 @@ def _branch_a(timing, fs, inj_idx, clock_name, edges) -> dict:
     else:
         granularity, rate_match = "line", True
 
-    # containing index (0-based) of the clock interval holding the injection edge
+    # containing index (0-based) of the clock interval holding the injection edge.
+    # side='right' => an edge landing ON a boundary belongs to the cycle it STARTS
+    # (cycle_number_1based = searchsorted(edges, idx, 'right'); make_trigger_sync's
+    # '<=' boundary convention is provably identical).
     i0 = int(np.searchsorted(edges, inj_idx, side="right") - 1)
     if i0 < 0:
         # injection precedes the first clock edge (inside head_pad, before ALS start)
@@ -361,37 +364,32 @@ def report(res: dict) -> str:
     return "\n".join(L)
 
 
-def als_datafile_timing_block(res: dict) -> dict:
-    """JSON-able block to fold into a trigger_sync sidecar at finalize time.
-
-    NOT yet part of trigger_sync.schema.json v0.1.0 — add it (and the measured
-    clock signal name) when finalizing the schema for the ALS mode.
-    """
-    block = {
-        "source": "als_clock_loopback" if res["branch"].startswith("A") else "common_acq_start",
-        "residual_offset_s": res["residual_offset_s"],
-        "inject_cycle_1based": res["inject_map"]["cycle_number_1based"],
-        "inject_offset_ms": res["inject_map"]["offset_into_interval_ms"],
-        "inject_pmt_sample_in_cycle": res["inject_map"]["pmt_sample_in_cycle"],
-        "inject_within_cycle": res["inject_map"]["within_cycle"],
-    }
-    if res["branch"].startswith("A"):
-        block["clock_signal"] = res["clock"]["dataset"]
-        block["clock_granularity"] = res["clock"]["granularity"]
-    return block
-
-
 def emit_sidecar(h5_path: str, als_stem: str, res: dict,
+                 clock_name: str = "frame_clock",
                  ttl_name: str = "Legato130_TTL") -> dict:
-    """Build the schema-valid base als sidecar via make_trigger_sync and attach the
-    measured als_datafile_timing block (proposed; flag as not-yet-in-schema)."""
+    """Emit the schema-valid trigger_sync sidecar by DELEGATING to the single
+    contract emitter (make_trigger_sync). make_trigger_sync self-computes the
+    v0.2.0 als_datafile_timing block from the branch-A clock (source
+    'als_branch_a_clock', head_pad_s, inject_cycle via the '<=' boundary
+    convention, which is provably identical to this module's branch-A mapping:
+    cycle_1based == searchsorted(edges, idx, 'right')).
+
+    The richer within-cycle diagnostics (which ROI, pmt sample) live in
+    report()/--json; they are NOT part of the frozen contract sidecar.
+
+    `res` is accepted to pass through the commanded cycle count
+    (n_cycles_commanded) for the cross-check field; alignment itself is recomputed
+    inside make_trigger_sync from the same recorded clock, so the two paths agree.
+    """
     import make_trigger_sync as MTS
     _, stem = _resolve_meta(als_stem)
-    base = MTS.build_trigger_sync(h5_path, "als",
-                                  als_datafile=os.path.basename(stem),
-                                  ttl_name=ttl_name)
-    base["als_datafile_timing"] = als_datafile_timing_block(res)   # finalize TODO: add to schema
-    return base
+    return MTS.build_trigger_sync(
+        h5_path, "als",
+        als_datafile=os.path.basename(stem),
+        n_cycles_commanded=res["als"]["n_cycles_meta"],
+        ttl_name=ttl_name,
+        fc_name=clock_name,
+    )
 
 
 def main() -> None:
@@ -403,7 +401,7 @@ def main() -> None:
     ap.add_argument("--ttl-name", default="Legato130_TTL")
     ap.add_argument("--json", action="store_true", help="print the full result dict as JSON")
     ap.add_argument("--emit-sidecar", action="store_true",
-                    help="also emit a trigger_sync sidecar with the timing block attached")
+                    help="also emit a schema-valid trigger_sync sidecar (delegates to make_trigger_sync)")
     ap.add_argument("--out", default=None, help="write emitted sidecar JSON here")
     a = ap.parse_args()
 
@@ -413,7 +411,7 @@ def main() -> None:
     else:
         print(report(res))
     if a.emit_sidecar or a.out:
-        sc = emit_sidecar(a.h5, a.als_stem, res, ttl_name=a.ttl_name)
+        sc = emit_sidecar(a.h5, a.als_stem, res, clock_name=a.clock_name, ttl_name=a.ttl_name)
         text = json.dumps(sc, indent=2, ensure_ascii=False)
         if a.out:
             with open(a.out, "w", encoding="utf-8") as fh:

@@ -15,6 +15,10 @@ function H = syncControlPanel(parent)
 % first /vDAQ0/D2.2 rising edge during a grab; on the bench (ALS off) the task
 % just sits armed -> use sync_v4_probe softTrigger to actually fire without ALS.
 %
+% NOTE (2026-06-19): the cycle-period field is scanner-derived, not a user
+% preference, so the panel always OPENS on the live hSI value
+% (hRoiManager.scanFramePeriod, via alsCyclePeriodS) -- never a stale 8 ms.
+%
 % PREREQ: WG 'TrigLegato130-2' Removed in Resource Config (frees D3.2).
 % NOTE: never `clear functions`/`clear all` while SI is up. This panel only
 %       reads/writes appdata and calls syncArmStart/syncDisarm.
@@ -23,14 +27,16 @@ function H = syncControlPanel(parent)
     APPKEY_ARMED  = 'sync_v4_armed';
     APPKEY_TASK   = 'sync_v4_task';
 
-    % defaults mirror syncArmStart/syncParams
-    def = struct('N',500,'R_Hz',1e5,'pulse_width_s',0.15,'cycle_period_s',8.0e-3);
+    % defaults mirror syncArmStart/syncParams; cycle period from LIVE hSI
+    def = struct('N',500,'R_Hz',1e5,'pulse_width_s',0.15, ...
+                 'cycle_period_s', alsCyclePeriodS([], 8.0e-3));
     cur = getappdata(0, APPKEY_PARAMS);
     if isempty(cur) || ~isstruct(cur), cur = struct(); end
     fn = fieldnames(def);
     for k = 1:numel(fn)
         if ~isfield(cur, fn{k}), cur.(fn{k}) = def.(fn{k}); end
     end
+    cur.cycle_period_s = alsCyclePeriodS([], 8.0e-3);   % scanner-derived: always open on live (kill stale)
 
     ownFig = (nargin < 1) || isempty(parent);
     if ownFig

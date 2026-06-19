@@ -31,6 +31,9 @@ function syncArmStart(src, evt, varargin)
 %   frameAcquired stays EMPTY.
 % TUNING: edit syncParams() OR override at runtime:
 %   setappdata(0,'sync_v4_params', struct('N',800,'R_Hz',1e5))
+% NOTE (2026-06-19): cycle_period_s now auto-reads the LIVE ALS cycle from hSI
+%   (hRoiManager.scanFramePeriod, via alsCyclePeriodS) instead of a hardcoded
+%   8 ms. An override that disagrees with the live scanner logs a warning at arm.
 % =========================================================================
     APPKEY = 'sync_v4_task';
     try
@@ -75,9 +78,10 @@ function syncArmStart(src, evt, varargin)
             't_arm', datestr(now,'yyyy-mm-dd HH:MM:SS')));
 
         fprintf(['[sync] armed DoTask on %s (%s), trig %s/%s, ' ...
-                 'target cycle N=%d (R=%.0f Hz, nSamp=%d, ~%.3fs delay)\n'], ...
+                 'target cycle N=%d (cyc %.4f ms, R=%.0f Hz, nSamp=%d, ~%.3fs delay)\n'], ...
                  p.do_chan, char(hT.sampleMode), p.trigger_term, ...
-                 string(hT.startTriggerEdge), p.N, p.R_Hz, nSamp, lead/p.R_Hz);
+                 string(hT.startTriggerEdge), p.N, p.cycle_period_s*1e3, ...
+                 p.R_Hz, nSamp, lead/p.R_Hz);
     catch ME
         fprintf(2, '[sync] DoTask ARM FAILED: %s\n', ME.message);
         if ~isempty(ME.stack)
@@ -88,12 +92,15 @@ end
 
 % =========================================================================
 function p = syncParams()
-% Defaults. Override via setappdata(0,'sync_v4_params', struct(...)).
+% Defaults. cycle_period_s is auto-read from the LIVE hSI ALS cycle
+% (hRoiManager.scanFramePeriod, via alsCyclePeriodS; was hardcoded 8 ms).
+% Override any field via setappdata(0,'sync_v4_params', struct(...)).
+    live_cyc = alsCyclePeriodS([], 8.0e-3);      % live ALS cycle [s]; fallback 8 ms
     p = struct( ...
         'daq_name',       'vDAQ0',          ...
         'do_chan',        'D3.2',           ...
         'trigger_term',   '/vDAQ0/D2.2',    ...  % frame-clock T-split (rising)
-        'cycle_period_s', 8.0e-3,           ...  % 125 Hz, 4-line (confirmed 2026-06-17)
+        'cycle_period_s', live_cyc,         ...  % auto from hSI.hRoiManager.scanFramePeriod
         'N',              500,              ...  % target ALS cycle
         'R_Hz',           1e5,              ...  % DoTask sample clock (modest)
         'pulse_width_s',  0.15,             ...  % ~0.1-0.2 s
@@ -102,6 +109,12 @@ function p = syncParams()
     if ~isempty(ov) && isstruct(ov)
         f = fieldnames(ov);
         for k = 1:numel(f), p.(f{k}) = ov.(f{k}); end
+    end
+    % surface drift: never let a stale override silently mistime the injection
+    if abs(p.cycle_period_s - live_cyc) > 0.01*live_cyc
+        warning(['[sync] cycle_period override %.4f s != live hSI %.4f s ' ...
+                 '(N=%d will land at the OVERRIDE timing)'], ...
+                 p.cycle_period_s, live_cyc, p.N);
     end
 end
 
