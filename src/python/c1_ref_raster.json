@@ -1,0 +1,150 @@
+{
+  "file": "sub-ref_ses-01_cond-qc_run-02_00001.tif",
+  "n_pages": 4,
+  "page0_shape": [
+    512,
+    512
+  ],
+  "dtype": "int16",
+  "checks": {
+    "ScanImage version": {
+      "status": "OK",
+      "key": "SI.VERSION_MAJOR",
+      "value": 2026,
+      "how": "exact",
+      "note": "record producing version"
+    },
+    "channelSave": {
+      "status": "OK",
+      "key": "SI.hChannels.channelSave",
+      "value": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "how": "exact",
+      "note": "expect [1,2,3,4]; SRS=Ch3"
+    },
+    "objectiveResolution": {
+      "status": "OK",
+      "key": "SI.objectiveResolution",
+      "value": 15,
+      "how": "exact",
+      "note": "um per scan-unit (calib)"
+    },
+    "scanFrameRate": {
+      "status": "OK",
+      "key": "SI.hRoiManager.scanFrameRate",
+      "value": 1.060355431140518,
+      "how": "exact",
+      "note": "raster ~1 Hz"
+    },
+    "linePeriod": {
+      "status": "OK",
+      "key": "SI.hRoiManager.linePeriod",
+      "value": 0.00184,
+      "how": "exact",
+      "note": ""
+    },
+    "linesPerFrame": {
+      "status": "OK",
+      "key": "SI.hRoiManager.linesPerFrame",
+      "value": 512,
+      "how": "exact",
+      "note": ""
+    },
+    "pixelsPerLine": {
+      "status": "OK",
+      "key": "SI.hRoiManager.pixelsPerLine",
+      "value": 512,
+      "how": "exact",
+      "note": ""
+    },
+    "framesPerSlice": {
+      "status": "OK",
+      "key": "SI.hStackManager.framesPerSlice",
+      "value": 1,
+      "how": "exact",
+      "note": "expect Inf (Gate1)"
+    },
+    "scannerToRefTransform": {
+      "status": "OK",
+      "key": "SI.hScan2D.scannerToRefTransform",
+      "value": [
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "how": "exact",
+      "note": "ref-space registration"
+    }
+  },
+  "imaging_scanfields": [
+    {
+      "sizeXY": [
+        13.5,
+        13.5
+      ],
+      "pixelResolutionXY": [
+        512,
+        512
+      ],
+      "centerXY": [
+        0,
+        0
+      ],
+      "rotation": 0,
+      "um_per_px_xcheck": [
+        0.3955078125,
+        0.3955078125
+      ]
+    }
+  ],
+  "timing": {
+    "frameTimestamps_sec": [
+      0.0,
+      0.0
+    ],
+    "acqTriggerTimestamps_sec": 0.0,
+    "frameNumbers": [
+      1,
+      1
+    ]
+  },
+  "als": {
+    "stimulusfield_in_roigroups": false,
+    "stem": "D:\\YasuiLab\\workspace\\2026_microscope_control_dev\\SRS\\20260619_sub-ref_ses-01\\raw\\sub-ref_ses-01_cond-qc_run-02_00002",
+    "datafiles": [
+      {
+        "name": "sub-ref_ses-01_cond-qc_run-02_00002.h5",
+        "bytes": 1610944
+      },
+      {
+        "name": "sub-ref_ses-01_cond-qc_run-02_00002.meta.txt",
+        "bytes": 31592
+      },
+      {
+        "name": "sub-ref_ses-01_cond-qc_run-02_00002.pmt.dat",
+        "bytes": 160000000
+      },
+      {
+        "name": "sub-ref_ses-01_cond-qc_run-02_00002.scnnr.dat",
+        "bytes": 12646400
+      }
+    ]
+  },
+  "raster_tif": "D:\\YasuiLab\\workspace\\2026_microscope_control_dev\\SRS\\20260619_sub-ref_ses-01\\raw\\sub-ref_ses-01_cond-qc_run-02_00001.tif"
+}

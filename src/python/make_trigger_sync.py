@@ -12,6 +12,10 @@ TTL edge = analysis time-zero) and the imaging timebase:
                        edge per ALS cycle), but signals.frame_clock is null and
                        anchor='als_datafile_timing' (per schema then-branch).
 
+0.3.0 (C2, method A): also emits 'recorded_channels' -- the full physical
+inventory of the .h5 (every dataset: name / AI / role / measured range) so the
+sidecar self-describes behavior + sync. behavior_sidecar (method B) is deprecated.
+
 This is the SINGLE schema-conformant trigger_sync emitter. als_inject_align.py's
 rich console analysis (which ROI, pmt sample) is diagnostics only; for the
 contract sidecar it should delegate here rather than build its own dict.
@@ -37,11 +41,51 @@ import numpy as np
 
 import datarecorder_loader as DR
 
-SCHEMA_VERSION = "0.2.0"   # bumped at galvo+ALS 2-mode finalize (als_datafile_timing block)
+SCHEMA_VERSION = "0.3.0"   # 0.2.0 -> 0.3.0 at C2 (recorded_channels block; method A)
+
+# name -> (physical vDAQ AI, controlled-vocab role). ADDITIVE: to add a new stream
+# (e.g. "pupil_area": ("AI3", "pupil")) add it here AND to the schema role enum.
+ROLE_MAP = {
+    "Legato130_TTL":   ("AI7", "injector_trigger"),
+    "frame_clock":     ("AI6", "cycle_clock"),
+    "treadmill_dir":   ("AI4", "locomotion_direction"),
+    "treadmill_speed": ("AI5", "locomotion_speed"),
+}
+
+# stable emit order for recorded_channels (sync first, then behavior)
+_ROLE_ORDER = {"injector_trigger": 0, "cycle_clock": 1,
+               "locomotion_speed": 2, "locomotion_direction": 3}
 
 
 def _round(x, n):
     return None if x is None or (isinstance(x, float) and not np.isfinite(x)) else round(float(x), n)
+
+
+def _recorded_channels(data, role_map=ROLE_MAP):
+    """Full physical inventory of the .h5 -> (channels, n_samples).
+
+    Fails LOUD on an unmapped dataset (deliberate, like schema_version const): a
+    new recorded stream must be added to ROLE_MAP (and the schema role enum)
+    before it can be emitted, rather than slipping through undocumented.
+    """
+    chans, n = [], 0
+    for name, arr in data["signals"].items():
+        a = np.asarray(arr, dtype=float)
+        n = max(n, int(a.size))
+        if name not in role_map:
+            raise ValueError(
+                f"unmapped recorded channel {name!r}; add it to ROLE_MAP (and the "
+                f"schema role enum) before emitting. present: {data['names']}")
+        ai, role = role_map[name]
+        chans.append({
+            "name": name,
+            "ai": ai,
+            "role": role,
+            "units": "V",
+            "range_v": [_round(float(np.nanmin(a)), 6), _round(float(np.nanmax(a)), 6)],
+        })
+    chans.sort(key=lambda c: (_ROLE_ORDER.get(c["role"], 9), c["name"]))
+    return chans, n
 
 
 def build_trigger_sync(
@@ -66,6 +110,9 @@ def build_trigger_sync(
     if ttl_name not in data["signals"]:
         raise ValueError(f"injector dataset {ttl_name!r} not in {data['names']}")
 
+    # --- full channel inventory (C2, method A) -------------------------------
+    recorded, n_samples = _recorded_channels(data)
+
     # --- injection t0 = recorded TTL edge (scan-mode independent) -------------
     ttl = data["signals"][ttl_name]
     lo, hi = float(np.nanmin(ttl)), float(np.nanmax(ttl))
@@ -78,14 +125,20 @@ def build_trigger_sync(
         "schema_version": schema_version,
         "scan_mode": scan_mode,
         "samplerate_hz": float(fs),
+        "n_samples": int(n_samples),
         "datarecorder_file": os.path.basename(h5_path),
-        "als_datafile": als_datafile if scan_mode == "als" else None,
+        # basename only (raw/-relative stem), matching datarecorder_file -- an
+        # absolute path would break when the sidecar moves to NAS/another machine.
+        "als_datafile": (os.path.basename(als_datafile)
+                         if (scan_mode == "als" and als_datafile) else None),
         "signals": {
             "injector_ttl": ttl_name,
             # ALS: frame_clock dataset exists physically but is the branch-A cycle
-            # clock, NOT a galvo frame clock -> reported null per schema.
+            # clock, NOT a galvo frame clock -> reported null per schema. (It is
+            # still listed in recorded_channels with role 'cycle_clock'.)
             "frame_clock": (fc_name if (scan_mode != "als" and fc_name in data["signals"]) else None),
         },
+        "recorded_channels": recorded,
         "t0": {
             "source": "datarecorder_ttl_edge",
             "dataset": ttl_name,
