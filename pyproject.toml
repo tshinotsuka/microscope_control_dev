@@ -1,0 +1,14 @@
+# microscope_control_dev/pyproject.toml
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcd-python"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = ["numpy"]   # 他を expose するなら tifffile/h5py も
+
+[tool.setuptools]
+package-dir = {"" = "src/python"}
+py-modules = ["als_loader"]   # 最小。fig_sync_panel も動かすなら "datarecorder_loader","qc_core" を追加
