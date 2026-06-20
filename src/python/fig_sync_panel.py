@@ -39,6 +39,20 @@ RED = "#d62728"
 BAND = (1.0, 0.78, 0.0, 0.18)
 
 
+def _work_dir(inp):
+    """Map .../raw/... -> .../work/ (created if missing); else <dir>/work/."""
+    from pathlib import Path
+    parent = Path(inp).resolve().parent
+    parts = list(parent.parts)
+    if "raw" in parts:
+        parts[len(parts) - 1 - parts[::-1].index("raw")] = "work"
+        outdir = Path(*parts)
+    else:
+        outdir = parent / "work"
+    outdir.mkdir(parents=True, exist_ok=True)
+    return outdir
+
+
 def _ctx(h5, als_stem):
     """Load qc numbers + raw traces once."""
     qc = qc_core.qc_load(h5, als_stem, ttl_name=TTL_NAME, clock_name=CLOCK_NAME)
@@ -79,7 +93,7 @@ def make_overview(ctx, out, title=None):
                          "font.size": 11, "axes.titlesize": 11, "axes.labelsize": 10,
                          "xtick.labelsize": 9, "ytick.labelsize": 9, "axes.grid": True,
                          "grid.alpha": 0.25})
-    nrow = int(have_ttl) + int(have_clock) + int(bool(behavior))
+    nrow = int(have_ttl) + int(have_clock) + len(behavior)
     fig, axes = plt.subplots(nrow, 1, figsize=(10, 2.2 * nrow), sharex=True)
     axes = list(np.atleast_1d(axes)); ai = 0
 
@@ -112,15 +126,13 @@ def make_overview(ctx, out, title=None):
                         xytext=(-6, -4), textcoords="offset points",
                         ha="right", va="top", fontsize=9, color="#8a6d00")
 
-    if behavior:
+    for j, nm in enumerate(behavior):
         ax = axes[ai]; ai += 1
-        for i, nm in enumerate(behavior):
-            ax.plot(t, data["signals"][nm], lw=0.7, color=plt.cm.tab10(i % 10), label=nm)
+        ax.plot(t, data["signals"][nm], lw=0.7, color=plt.cm.tab10(j % 10))
         mark(ax)
-        ax.set_ylabel("behavior\n(V)")
-        ax.legend(loc="upper right", fontsize=8, framealpha=0.6)
-        ax.set_title("behavior (treadmill)  --  same HDF5, same clock "
-                     "(note: noise onset at scan start = candidate scanner EMI)", loc="left")
+        ax.set_ylabel(f"{nm}\n(V)")
+        note = "  (noise onset at scan start = candidate scanner EMI)" if j == 0 else ""
+        ax.set_title(f"{nm}  --  same HDF5, same clock{note}", loc="left")
 
     axes[-1].set_xlabel("time (s, recorder-relative)")
     axes[0].set_xlim(t[0], t[-1] if t.size else 1)
@@ -188,12 +200,20 @@ def main():
     ap.add_argument("h5")
     ap.add_argument("als_stem", nargs="?", default=None)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--out-dir", default=None)
     ap.add_argument("--zoom-ms", type=float, default=40.0, help="zoom half-window (ms)")
     ap.add_argument("--title", default=None)
     a = ap.parse_args()
 
     ctx = _ctx(a.h5, a.als_stem)
-    out = a.out or (os.path.splitext(a.h5)[0] + "_F1_sync.png")
+    if a.out:
+        from pathlib import Path
+        out = a.out; Path(out).parent.mkdir(parents=True, exist_ok=True)
+    else:
+        from pathlib import Path
+        outdir = Path(a.out_dir) if a.out_dir else _work_dir(a.h5)
+        outdir.mkdir(parents=True, exist_ok=True)
+        out = str(outdir / (os.path.splitext(os.path.basename(a.h5))[0] + "_F1_sync.png"))
     make_overview(ctx, out, title=a.title)
     make_zoom(ctx, out, zoom_ms=a.zoom_ms)
     for w in ctx["qc"].get("warnings", []):
