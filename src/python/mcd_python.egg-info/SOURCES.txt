@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+src/python/mcd_python.egg-info/PKG-INFO
+src/python/mcd_python.egg-info/SOURCES.txt
+src/python/mcd_python.egg-info/dependency_links.txt
+src/python/mcd_python.egg-info/requires.txt
+src/python/mcd_python.egg-info/top_level.txt
+src/python/als_loader.py
+src/python/mcd_python.egg-info/SOURCES.txt
