@@ -1,1 +1,3 @@
 als_loader
+datarecorder_loader
+qc_core
