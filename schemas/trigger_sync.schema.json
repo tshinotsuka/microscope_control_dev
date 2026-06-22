@@ -3,7 +3,7 @@
   "$id": "https://yasuilab.example/schemas/trigger_sync.schema.json",
   "$comment": "FINALIZE TODO ($id): replace the 'yasuilab.example' placeholder host with the SAME host used by the sibling als_sidecar.schema.json so the two ids share a namespace. One-line swap; kept as placeholder here because the sibling's published location was not in hand at finalize time (2026-06-12).",
   "title": "trigger_sync sidecar",
-  "description": "Per-acquisition cross-modal alignment metadata. The injection time-zero (t0) is the recorded injector TTL edge in the Data Recorder HDF5 -- scan-mode independent (sync_architecture.md s2, 2026-06-04). Injection is correlated to imaging via 'anchor' (frame_clock for galvo/resonant; ALS data-file timing for ALS), NEVER via recorder-start: the recorder (Auto Start) begins before the first frame, so head_pad_s is non-zero (recorder-start != frame-0). Metadata-over-filenames: scan parameters live here, not in filenames. Sibling of als_sidecar.schema.json. FINALIZED to the galvo+ALS 2-mode contract (2026-06-12): resonant remains a reserved enum value (hardware absent) and is handled by the else-branch like galvo until its own then-branch is added. The single conformant emitter is make_trigger_sync.py (als_inject_align.py --emit-sidecar delegates to it); schema_version is const-pinned (2026-06-19) so a stale emitter fails loudly.",
+  "description": "Per-acquisition cross-modal alignment metadata. The injection time-zero (t0) is the recorded injector TTL edge in the Data Recorder HDF5 -- scan-mode independent (sync_architecture.md s2, 2026-06-04). Injection is correlated to imaging via 'anchor' (frame_clock for galvo/resonant; ALS data-file timing for ALS), NEVER via recorder-start: the recorder (Auto Start) begins before the first frame, so head_pad_s is non-zero (recorder-start != frame-0). Metadata-over-filenames: scan parameters live here, not in filenames. Sibling of als_sidecar.schema.json. FINALIZED to the galvo+ALS 2-mode contract (2026-06-12): resonant remains a reserved enum value (hardware absent) and is handled by the else-branch like galvo until its own then-branch is added. The single conformant emitter is make_trigger_sync.py (als_inject_align.py --emit-sidecar delegates to it); schema_version is const-pinned (2026-06-19) so a stale emitter fails loudly. 0.3.0 (C2, method A): adds the required 'recorded_channels' full-inventory block so the HDF5 is self-describing for behavior + sync; the method-B behavior_sidecar is deprecated.",
   "type": "object",
   "required": [
     "schema_version",
@@ -11,14 +11,15 @@
     "samplerate_hz",
     "datarecorder_file",
     "signals",
+    "recorded_channels",
     "t0",
     "anchor"
   ],
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "0.2.0",
-      "description": "Version of this sidecar's schema. PINNED to the current contract version with 'const' (2026-06-19, R1 lesson): a stale emitter that writes an older string FAILS validation loudly rather than slipping through a lax pattern. Bump this const TOGETHER with the schema when the contract changes (and update make_trigger_sync.SCHEMA_VERSION in lockstep). History: 0.1.0 -> 0.2.0 at the galvo+ALS 2-mode finalize (adds the required als_datafile_timing block for ALS; non-null als_datafile for ALS)."
+      "const": "0.3.0",
+      "description": "Version of this sidecar's schema. PINNED to the current contract version with 'const' (2026-06-19, R1 lesson): a stale emitter that writes an older string FAILS validation loudly rather than slipping through a lax pattern. Bump this const TOGETHER with the schema when the contract changes (and update make_trigger_sync.SCHEMA_VERSION in lockstep). History: 0.1.0 -> 0.2.0 at the galvo+ALS 2-mode finalize (adds the required als_datafile_timing block for ALS; non-null als_datafile for ALS). 0.2.0 -> 0.3.0 (C2, method A): adds the required 'recorded_channels' array + optional 'n_samples'; behavior (AI4/AI5) now lives in the SAME Data Recorder HDF5 as injector(AI7)/clock(AI6), so the sidecar documents ALL channels."
     },
     "scan_mode": {
       "enum": ["galvo", "als", "resonant"],
@@ -28,6 +29,11 @@
       "type": "number",
       "exclusiveMinimum": 0,
       "description": "Data Recorder sample clock (Hz), read from the HDF5 root '/' attribute 'samplerate'. All recorded channels share this single vDAQ clock. Time of any sample = sample_index / samplerate_hz."
+    },
+    "n_samples": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Samples per channel (longest recorded dataset). Optional cross-check; duration_s = n_samples / samplerate_hz."
     },
     "datarecorder_file": {
       "type": "string",
@@ -42,6 +48,7 @@
       "type": "object",
       "required": ["injector_ttl"],
       "additionalProperties": false,
+      "description": "Semantic role -> dataset-name pointers used by the t0/anchor logic. The full physical inventory (AI, range) is in 'recorded_channels'; 'signals' just names which dataset plays each timing role. signals.behavior is superseded by recorded_channels entries with role 'locomotion_*' (kept for back-compat).",
       "properties": {
         "injector_ttl": {
           "type": "string",
@@ -49,12 +56,39 @@
         },
         "frame_clock": {
           "type": ["string", "null"],
-          "description": "HDF5 dataset name for the frame clock. Non-null string for galvo/resonant (the D0.0->AI6 loopback); MUST be null for ALS (no per-frame clock dataset -- ALS cycle timing comes from als_datafile_timing's branch-A clock, not this dataset). Enforced per-mode in then/else."
+          "description": "HDF5 dataset name for the frame clock. Non-null string for galvo/resonant (the D0.0->AI6 loopback); MUST be null for ALS (no per-frame clock dataset -- ALS cycle timing comes from als_datafile_timing's branch-A clock, not this dataset). Enforced per-mode in then/else. NOTE: the frame_clock dataset is still PHYSICALLY recorded for ALS and is listed in recorded_channels with role 'cycle_clock'; this null is a semantic statement, not a claim the dataset is absent."
         },
         "behavior": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Optional behavior channel dataset names (treadmill_dir, treadmill_speed, reward, ...). Same Data Recorder HDF5, same vDAQ clock."
+          "description": "Optional behavior channel dataset names (treadmill_dir, treadmill_speed, reward, ...). Same Data Recorder HDF5, same vDAQ clock. SUPERSEDED by recorded_channels (role 'locomotion_*'); kept for back-compat."
+        }
+      }
+    },
+    "recorded_channels": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Full physical inventory of the Data Recorder HDF5: every recorded dataset, self-describing (AI / role / measured range). Mode-independent -- the frame_clock dataset is listed here with role 'cycle_clock' even for ALS (where signals.frame_clock is null). recorded_channels = what is PHYSICALLY recorded; signals = semantic roles for the t0/anchor logic. Added 0.3.0 (C2, method A).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "ai", "role", "units", "range_v"],
+        "properties": {
+          "name":  { "type": "string", "minLength": 1,
+                     "description": "HDF5 dataset name (Recorded Name)." },
+          "ai":    { "type": "string", "pattern": "^AI[0-9]+$",
+                     "description": "Physical vDAQ analog-in channel, e.g. 'AI5'." },
+          "role":  { "enum": ["injector_trigger", "cycle_clock",
+                              "locomotion_speed", "locomotion_direction"],
+                     "description": "Controlled vocab; extend ADDITIVELY (e.g. add 'pupil' here and in the emitter ROLE_MAP together)." },
+          "units": { "const": "V" },
+          "range_v": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "Measured [min, max] of the channel."
+          }
         }
       }
     },
@@ -223,15 +257,22 @@
   ],
   "examples": [
     {
-      "schema_version": "0.2.0",
+      "schema_version": "0.3.0",
       "scan_mode": "galvo",
       "samplerate_hz": 5000.0,
+      "n_samples": 25000,
       "datarecorder_file": "sub-ref_ses-01_cond-qc_run-03_00001.h5",
       "als_datafile": null,
       "signals": {
         "injector_ttl": "Legato130_TTL",
         "frame_clock": "frame_clock"
       },
+      "recorded_channels": [
+        { "name": "Legato130_TTL", "ai": "AI7", "role": "injector_trigger",    "units": "V", "range_v": [-0.002, 5.013] },
+        { "name": "frame_clock",   "ai": "AI6", "role": "cycle_clock",         "units": "V", "range_v": [-0.004, 3.321] },
+        { "name": "treadmill_speed","ai": "AI5","role": "locomotion_speed",     "units": "V", "range_v": [-0.041, 0.038] },
+        { "name": "treadmill_dir", "ai": "AI4", "role": "locomotion_direction", "units": "V", "range_v": [-0.012, 0.021] }
+      ],
       "t0": {
         "source": "datarecorder_ttl_edge",
         "dataset": "Legato130_TTL",
@@ -254,15 +295,22 @@
       "physical_delay_offset_s": null
     },
     {
-      "schema_version": "0.2.0",
+      "schema_version": "0.3.0",
       "scan_mode": "als",
       "samplerate_hz": 5000.0,
+      "n_samples": 41000,
       "datarecorder_file": "sub-ref_ses-01_cond-qc_run-01_00004.h5",
       "als_datafile": "sub-ref_ses-01_cond-qc_run-01_00004",
       "signals": {
         "injector_ttl": "Legato130_TTL",
         "frame_clock": null
       },
+      "recorded_channels": [
+        { "name": "Legato130_TTL", "ai": "AI7", "role": "injector_trigger",    "units": "V", "range_v": [-0.002, 5.020] },
+        { "name": "frame_clock",   "ai": "AI6", "role": "cycle_clock",         "units": "V", "range_v": [-0.004, 3.318] },
+        { "name": "treadmill_speed","ai": "AI5","role": "locomotion_speed",     "units": "V", "range_v": [-0.047, 0.052] },
+        { "name": "treadmill_dir", "ai": "AI4", "role": "locomotion_direction", "units": "V", "range_v": [-0.015, 0.019] }
+      ],
       "t0": {
         "source": "datarecorder_ttl_edge",
         "dataset": "Legato130_TTL",

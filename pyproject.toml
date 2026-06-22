@@ -7,8 +7,8 @@ build-backend = "setuptools.build_meta"
 name = "mcd-python"
 version = "0.1.0"
 requires-python = ">=3.9"
-dependencies = ["numpy"]   # 他を expose するなら tifffile/h5py も
+dependencies = ["numpy", "h5py"]      # datarecorder_loader が h5py を使う
 
 [tool.setuptools]
 package-dir = {"" = "src/python"}
-py-modules = ["als_loader"]   # 最小。fig_sync_panel も動かすなら "datarecorder_loader","qc_core" を追加
+py-modules = ["als_loader", "datarecorder_loader", "qc_core"]
