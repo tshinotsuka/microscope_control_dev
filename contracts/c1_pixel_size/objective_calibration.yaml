@@ -9,5 +9,14 @@ objectives:
     target: R1L3S3P1
     spacing_um: 50
     classData: "25xOlympus-CoordinateSystems_classData.mat"
-    tolerance_pct: 2        # QC 突合の公差
-  # 10xOlympus: 交換後に追記
+    tolerance_pct: 2
+  10xThorlabs_TL10X2P:
+    objectiveResolution: 44.85
+    um_per_px: 1.182
+    fov_um: 605
+    na: 0.5
+    cal_date: 2026-06-23
+    target: R1L3S3P1
+    spacing_um: 50
+    classData: "10xThorlabs_TL10X2P-CoordinateSystems_classData.mat"
+    tolerance_pct: 2
