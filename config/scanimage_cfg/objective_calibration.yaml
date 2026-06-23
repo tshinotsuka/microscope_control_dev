@@ -1,0 +1,13 @@
+# 対物ごとの pixel-size 較正台帳。objectiveResolution の単一の正。
+# 校正法: graticule (R1L3S3P1) long-baseline 2交点法。
+objectives:
+  25xOlympus:
+    objectiveResolution: 37.2
+    um_per_px: 0.981
+    fov_um: 502
+    cal_date: 2026-06-23
+    target: R1L3S3P1
+    spacing_um: 50
+    classData: "25xOlympus-CoordinateSystems_classData.mat"
+    tolerance_pct: 2        # QC 突合の公差
+  # 10xOlympus: 交換後に追記
