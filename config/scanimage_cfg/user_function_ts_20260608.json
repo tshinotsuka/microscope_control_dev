@@ -1,0 +1,20 @@
+[
+  {
+    "EventName": "acqModeStart",
+    "UserFcnName": "syncArmStart",
+    "Arguments": [],
+    "Enable": true
+  },
+  {
+    "EventName": "acqAbort",
+    "UserFcnName": "syncDisarm",
+    "Arguments": [],
+    "Enable": true
+  },
+  {
+    "EventName": "acqDone",
+    "UserFcnName": "syncDisarm",
+    "Arguments": [],
+    "Enable": true
+  }
+]
